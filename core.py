@@ -10,7 +10,7 @@ class TuneBlasterApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("TuneBlaster 3000")
-        self.setGeometry(100, 100, 800, 500)  # Bigger for playlist
+        self.setGeometry(100, 100, 800, 500)
 
         # Setup UI first
         self.ui = TuneBlasterUI(self)
@@ -25,3 +25,4 @@ class TuneBlasterApp(QMainWindow):
         self.ui.seek_slider.sliderMoved.connect(self.player.seek)
         self.ui.volume_slider.valueChanged.connect(self.player.set_volume)
         self.ui.playlist_widget.itemDoubleClicked.connect(self.player.play_from_playlist)
+        self.ui.stream_button.clicked.connect(self.player.load_stream)  # New streaming button
