@@ -5,8 +5,12 @@ from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtWidgets import QFileDialog, QMessageBox
 from PyQt5.QtCore import QUrl
 import logging
+import spotdl
+import os
+import yt_dlp  # For Boomplay URL extraction
+from threading import Thread
 
-# Setup basic logging
+# Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 class TuneBlasterPlayer:
@@ -16,6 +20,10 @@ class TuneBlasterPlayer:
         self.media_player = QMediaPlayer(parent)
         self.media_player.setVideoOutput(self.parent.ui.video_display)
         self.playlist = []
+        self.spotify_cache = os.path.expanduser("~/TuneBlaster_Spotify_Cache")
+        self.boomplay_cache = os.path.expanduser("~/TuneBlaster_Boomplay_Cache")
+        os.makedirs(self.spotify_cache, exist_ok=True)
+        os.makedirs(self.boomplay_cache, exist_ok=True)
 
         # Connect signals
         self.media_player.durationChanged.connect(self.update_duration)
@@ -67,6 +75,75 @@ class TuneBlasterPlayer:
         else:
             QMessageBox.warning(self.parent, "Oops!", "Enter a valid URL, ya dingus!")
             logging.warning("Empty URL input attempted.")
+
+    def load_spotify(self):
+        """Load a Spotify track or playlist from URL."""
+        spotify_url = self.parent.ui.spotify_input.text().strip()
+        if spotify_url:
+            if "spotify.com" not in spotify_url:
+                QMessageBox.warning(self.parent, "Oops!", "Enter a valid Spotify URL!")
+                logging.warning("Invalid Spotify URL attempted.")
+                return
+            Thread(target=self.download_spotify, args=(spotify_url,)).start()
+            self.parent.ui.spotify_input.clear()
+        else:
+            QMessageBox.warning(self.parent, "Oops!", "Enter a Spotify URL, ya dingus!")
+            logging.warning("Empty Spotify URL input attempted.")
+
+    def download_spotify(self, url):
+        """Download Spotify track/playlist using spotdl and add to playlist."""
+        try:
+            from spotdl import Spotdl
+            spotdl_client = Spotdl(client_id="YOUR_SPOTIFY_CLIENT_ID", client_secret="YOUR_SPOTIFY_CLIENT_SECRET")
+            tracks = spotdl_client.search([url])
+            downloaded_files = spotdl_client.download_songs(tracks, output_dir=self.spotify_cache)
+            for file_path, _ in downloaded_files:
+                if file_path:
+                    self.playlist.append(file_path)
+                    self.update_playlist_ui()
+                    logging.info(f"Downloaded Spotify track: {file_path}")
+            if downloaded_files:
+                self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(downloaded_files[0][0])))
+                self.media_player.play()
+                self.parent.ui.play_button.setText("Pause")
+        except Exception as e:
+            QMessageBox.critical(self.parent, "Spotify Error", f"Failed to load Spotify: {str(e)}")
+            logging.error(f"Spotify download failed: {str(e)}")
+
+    def load_boomplay(self):
+        """Load a Boomplay track or playlist from URL."""
+        boomplay_url = self.parent.ui.boomplay_input.text().strip()
+        if boomplay_url:
+            if "boomplay.com" not in boomplay_url:
+                QMessageBox.warning(self.parent, "Oops!", "Enter a valid Boomplay URL!")
+                logging.warning("Invalid Boomplay URL attempted.")
+                return
+            Thread(target=self.download_boomplay, args=(boomplay_url,)).start()
+            self.parent.ui.boomplay_input.clear()
+        else:
+            QMessageBox.warning(self.parent, "Oops!", "Enter a Boomplay URL, ya dingus!")
+            logging.warning("Empty Boomplay URL input attempted.")
+
+    def download_boomplay(self, url):
+        """Download Boomplay track using yt-dlp and add to playlist."""
+        try:
+            ydl_opts = {
+                "format": "bestaudio/best",
+                "outtmpl": os.path.join(self.boomplay_cache, "%(title)s.%(ext)s"),
+                "quiet": True,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                file_path = ydl.prepare_filename(info)
+                self.playlist.append(file_path)
+                self.update_playlist_ui()
+                self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(file_path)))
+                self.media_player.play()
+                self.parent.ui.play_button.setText("Pause")
+                logging.info(f"Downloaded Boomplay track: {file_path}")
+        except Exception as e:
+            QMessageBox.critical(self.parent, "Boomplay Error", f"Failed to load Boomplay: {str(e)}")
+            logging.error(f"Boomplay download failed: {str(e)}")
 
     def play_from_playlist(self, item):
         """Play a file or stream from the playlist when double-clicked."""

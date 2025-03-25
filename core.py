@@ -25,4 +25,6 @@ class TuneBlasterApp(QMainWindow):
         self.ui.seek_slider.sliderMoved.connect(self.player.seek)
         self.ui.volume_slider.valueChanged.connect(self.player.set_volume)
         self.ui.playlist_widget.itemDoubleClicked.connect(self.player.play_from_playlist)
-        self.ui.stream_button.clicked.connect(self.player.load_stream)  # New streaming button
+        self.ui.stream_button.clicked.connect(self.player.load_stream)
+        self.ui.spotify_button.clicked.connect(self.player.load_spotify)
+        self.ui.boomplay_button.clicked.connect(self.player.load_boomplay)  # New Boomplay button

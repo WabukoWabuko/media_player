@@ -12,16 +12,14 @@ class TuneBlasterUI:
 
     def setup_ui(self):
         """Build the interface, rolling out the red carpet for controls."""
-        # Central widget and main layout
         main_widget = QWidget(self.parent)
         self.parent.setCentralWidget(main_widget)
         main_layout = QVBoxLayout(main_widget)
 
-        # Video display
         self.video_display = QVideoWidget()
         main_layout.addWidget(self.video_display)
 
-        # Streaming input layout
+        # Stream input
         stream_layout = QHBoxLayout()
         self.stream_input = QLineEdit()
         self.stream_input.setPlaceholderText("Enter stream URL (e.g., http://example.com/stream.mp3)")
@@ -30,13 +28,31 @@ class TuneBlasterUI:
         stream_layout.addWidget(self.stream_button)
         main_layout.addLayout(stream_layout)
 
-        # Controls layout
+        # Spotify input
+        spotify_layout = QHBoxLayout()
+        self.spotify_input = QLineEdit()
+        self.spotify_input.setPlaceholderText("Enter Spotify URL (e.g., https://open.spotify.com/track/...)")
+        spotify_layout.addWidget(self.spotify_input)
+        self.spotify_button = QPushButton("Load Spotify")
+        spotify_layout.addWidget(self.spotify_button)
+        main_layout.addLayout(spotify_layout)
+
+        # Boomplay input
+        boomplay_layout = QHBoxLayout()
+        self.boomplay_input = QLineEdit()
+        self.boomplay_input.setPlaceholderText("Enter Boomplay URL (e.g., https://www.boomplay.com/songs/...)")
+        boomplay_layout.addWidget(self.boomplay_input)
+        self.boomplay_button = QPushButton("Load Boomplay")
+        boomplay_layout.addWidget(self.boomplay_button)
+        main_layout.addLayout(boomplay_layout)
+
+        # Controls
         controls_layout = QHBoxLayout()
         self.play_button = QPushButton("Play")
         controls_layout.addWidget(self.play_button)
         self.seek_slider = QSlider(Qt.Horizontal)
         self.seek_slider.setMinimum(0)
-        self.seek_slider.setMaximum(1000)  # Updated dynamically
+        self.seek_slider.setMaximum(1000)
         controls_layout.addWidget(self.seek_slider)
         self.volume_slider = QSlider(Qt.Horizontal)
         self.volume_slider.setMinimum(0)
@@ -47,6 +63,5 @@ class TuneBlasterUI:
         controls_layout.addWidget(self.open_button)
         main_layout.addLayout(controls_layout)
 
-        # Playlist widget
         self.playlist_widget = QListWidget()
         main_layout.addWidget(self.playlist_widget)
