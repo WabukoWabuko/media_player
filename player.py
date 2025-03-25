@@ -3,7 +3,7 @@
 
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtWidgets import QFileDialog, QMessageBox, QWidget, QListWidgetItem, QMenu, QAction
-from PyQt5.QtCore import QUrl, QThread, pyqtSignal, Qt, QSize
+from PyQt5.QtCore import QUrl, QThread, pyqtSignal, Qt, QSize, QTimer  # Added QTimer for fade effect
 from PyQt5.QtGui import QPainter, QColor, QIcon
 import logging
 import os
@@ -140,7 +140,7 @@ class TuneBlasterPlayer:
         self.playlist = []
         self.queue = []
         self.web_tracks = []
-        self.search_history = []  # New: Store recent searches
+        self.search_history = []
         self.cache_dir = os.path.expanduser("~/TuneBlaster_Cache")
         self.config_dir = os.path.expanduser("~/TuneBlaster_Config")
         os.makedirs(self.cache_dir, exist_ok=True)
@@ -151,6 +151,12 @@ class TuneBlasterPlayer:
         self.current_playlist_index = -1
         self.workers = []
         self.repeat_mode = 0  # 0: off, 1: repeat track, 2: repeat playlist
+        self.fade_timer = QTimer()  # For volume fade effect
+        self.fade_timer.setInterval(50)  # 50ms steps
+        self.fade_timer.timeout.connect(self.fade_step)
+        self.fade_target = 0
+        self.fade_step_value = 5
+        self.current_volume = 50  # Track current volume
 
         # Connect signals
         self.media_player.durationChanged.connect(self.update_duration)
@@ -159,16 +165,33 @@ class TuneBlasterPlayer:
         self.media_player.mediaStatusChanged.connect(self.on_media_status_changed)
 
     def toggle_playback(self):
-        """Play or pause the media, like a musical yo-yo."""
+        """Play or pause the media with a fade effect."""
         if self.media_player.state() == QMediaPlayer.PlayingState:
-            self.media_player.pause()
+            self.fade_target = 0  # Fade out
+            self.fade_timer.start()
             self.parent.ui.play_button.setText("Play")
         else:
             if self.media_player.media().isNull():
                 self.fetch_youtube()
             else:
+                self.fade_target = self.parent.ui.volume_slider.value()  # Fade in to slider value
+                self.fade_timer.start()
                 self.media_player.play()
                 self.parent.ui.play_button.setText("Pause")
+
+    def fade_step(self):
+        """Handle volume fade effect step-by-step."""
+        current = self.media_player.volume()
+        if current == self.fade_target:
+            self.fade_timer.stop()
+            if self.fade_target == 0:
+                self.media_player.pause()
+            return
+        if current < self.fade_target:
+            new_volume = min(current + self.fade_step_value, self.fade_target)
+        else:
+            new_volume = max(current - self.fade_step_value, self.fade_target)
+        self.media_player.setVolume(new_volume)
 
     def play_next_track(self):
         """Play the next track in the playlist."""
@@ -239,6 +262,13 @@ class TuneBlasterPlayer:
         QMessageBox.information(self.parent, "Success", "Playlist and queue cleared!")
         logging.info("Playlist and queue cleared")
 
+    def clear_search_history(self):
+        """Clear the search history."""
+        self.search_history = []
+        self.parent.ui.search_input.clear()
+        QMessageBox.information(self.parent, "Success", "Search history cleared!")
+        logging.info("Search history cleared")
+
     def load_local_media(self):
         """Load local files, splitting large ones."""
         file_paths, _ = QFileDialog.getOpenFileNames(
@@ -299,7 +329,7 @@ class TuneBlasterPlayer:
         if query:
             if query not in self.search_history:
                 self.search_history.append(query)
-                if len(self.search_history) > 10:  # Limit history to 10 items
+                if len(self.search_history) > 10:
                     self.search_history.pop(0)
                 self.parent.ui.search_input.clear()
                 self.parent.ui.search_input.addItems(self.search_history)
@@ -489,7 +519,9 @@ class TuneBlasterPlayer:
 
     def set_volume(self, value):
         """Adjust volume, from whisper to wall-shaking."""
-        self.media_player.setVolume(value)
+        self.current_volume = value
+        if not self.fade_timer.isActive():
+            self.media_player.setVolume(value)
 
     def update_duration(self, duration):
         """Set seek slider range when media loads."""

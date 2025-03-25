@@ -39,7 +39,7 @@ class TuneBlasterUI:
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
 
-        # Search bar (now a QComboBox for history)
+        # Search bar (QComboBox for history)
         search_layout = QHBoxLayout()
         self.search_input = QComboBox()
         self.search_input.setEditable(True)
@@ -49,6 +49,9 @@ class TuneBlasterUI:
         self.fetch_button = QPushButton("Browse YouTube")
         self.fetch_button.setStyleSheet("background-color: #1db954; color: white; padding: 5px; border-radius: 5px;")
         search_layout.addWidget(self.fetch_button)
+        self.clear_search_button = QPushButton("Clear History")
+        self.clear_search_button.setStyleSheet("background-color: #ff5555; color: white; padding: 5px; border-radius: 5px;")
+        search_layout.addWidget(self.clear_search_button)
         content_layout.addLayout(search_layout)
 
         # Download progress bar
@@ -100,7 +103,7 @@ class TuneBlasterUI:
         self.play_button = QPushButton("Play")
         self.play_button.setStyleSheet("background-color: #1db954; color: white; padding: 5px; border-radius: 5px;")
         controls_layout.addWidget(self.play_button)
-        self.previous_button = QPushButton("Prev")  # Renamed to previous_button
+        self.previous_button = QPushButton("Prev")
         self.previous_button.setStyleSheet("background-color: #1db954; color: white; padding: 5px; border-radius: 5px;")
         controls_layout.addWidget(self.previous_button)
         self.next_button = QPushButton("Next")
