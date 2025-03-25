@@ -23,6 +23,8 @@ class TuneBlasterApp(QMainWindow):
         self.ui.play_button.clicked.connect(self.player.toggle_playback)
         self.ui.open_button.clicked.connect(self.player.load_local_media)
         self.ui.seek_slider.sliderMoved.connect(self.player.seek)
+        self.ui.seek_slider.sliderPressed.connect(self.player.start_seeking)
+        self.ui.seek_slider.sliderReleased.connect(self.player.stop_seeking)
         self.ui.volume_slider.valueChanged.connect(self.player.set_volume)
         self.ui.track_list.itemDoubleClicked.connect(self.player.play_from_list)
         self.ui.fetch_button.clicked.connect(self.player.fetch_music)

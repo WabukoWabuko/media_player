@@ -4,20 +4,22 @@
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtWidgets import QFileDialog, QMessageBox, QWidget
 from PyQt5.QtCore import QUrl, QThread, pyqtSignal, Qt
-from PyQt5.QtGui import QPainter, QColor
+from PyQt5.QtGui import QPainter, QColor, QIcon
 import logging
 import os
 import random
 import numpy as np
 import json
 import requests
+import yt_dlp
+from datetime import timedelta
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 class FetchWorker(QThread):
     """Worker thread for fetching YouTube content via API."""
-    tracks_fetched = pyqtSignal(list)  # Signal for fetched tracks: [(title, video_id), ...]
+    tracks_fetched = pyqtSignal(list)  # Signal for fetched tracks: [(title, video_id, thumbnail, duration), ...]
     error_occurred = pyqtSignal(str)   # Signal for errors
 
     def __init__(self, api_key, query="music -inurl:(signup login)"):
@@ -28,6 +30,7 @@ class FetchWorker(QThread):
     def run(self):
         """Fetch music videos from YouTube API."""
         try:
+            # Step 1: Search for videos
             url = "https://www.googleapis.com/youtube/v3/search"
             params = {
                 "part": "snippet",
@@ -36,16 +39,84 @@ class FetchWorker(QThread):
                 "maxResults": 20,
                 "key": self.api_key,
                 "videoCategoryId": "10",  # Music category
+                "order": "relevance",  # Filter for more relevant results
+                "videoDuration": "short",  # Exclude long videos (e.g., live streams)
             }
             response = requests.get(url, params=params)
             data = response.json()
-            if "items" in data:
-                tracks = [(item["snippet"]["title"], item["id"]["videoId"]) for item in data["items"]]
-                self.tracks_fetched.emit(tracks)
-            else:
+            if "items" not in data:
                 self.error_occurred.emit("No tracks found in YouTube API response")
+                return
+
+            # Step 2: Get video IDs to fetch durations
+            video_ids = [item["id"]["videoId"] for item in data["items"]]
+            video_details_url = "https://www.googleapis.com/youtube/v3/videos"
+            details_params = {
+                "part": "contentDetails",
+                "id": ",".join(video_ids),
+                "key": self.api_key,
+            }
+            details_response = requests.get(video_details_url, params=details_params)
+            details_data = details_response.json()
+
+            # Step 3: Combine data
+            tracks = []
+            duration_map = {item["id"]: item["contentDetails"]["duration"] for item in details_data.get("items", [])}
+            for item in data["items"]:
+                video_id = item["id"]["videoId"]
+                title = item["snippet"]["title"]
+                thumbnail = item["snippet"]["thumbnails"]["default"]["url"]
+                duration = duration_map.get(video_id, "PT0S")  # ISO 8601 duration
+                # Convert ISO 8601 duration to readable format (e.g., "3:45")
+                duration = self.parse_duration(duration)
+                tracks.append((title, video_id, thumbnail, duration))
+            self.tracks_fetched.emit(tracks)
         except Exception as e:
             self.error_occurred.emit(f"Failed to fetch YouTube content: {str(e)}")
+
+    def parse_duration(self, iso_duration):
+        """Convert ISO 8601 duration to MM:SS format."""
+        try:
+            duration = 0
+            if "H" in iso_duration:
+                hours = int(iso_duration.split("H")[0].replace("PT", ""))
+                duration += hours * 3600
+                iso_duration = iso_duration.split("H")[1]
+            if "M" in iso_duration:
+                minutes = int(iso_duration.split("M")[0].replace("PT", ""))
+                duration += minutes * 60
+                iso_duration = iso_duration.split("M")[1]
+            if "S" in iso_duration:
+                seconds = int(iso_duration.split("S")[0])
+                duration += seconds
+            return str(timedelta(seconds=duration))[2:]  # Remove "0:" prefix if present
+        except Exception:
+            return "0:00"
+
+class StreamWorker(QThread):
+    """Worker thread for extracting YouTube stream URLs."""
+    stream_fetched = pyqtSignal(str)  # Signal for fetched stream URL
+    error_occurred = pyqtSignal(str)  # Signal for errors
+
+    def __init__(self, video_id):
+        super().__init__()
+        self.video_id = video_id
+
+    def run(self):
+        """Extract the direct stream URL using yt-dlp."""
+        try:
+            ydl_opts = {
+                "format": "best",  # Changed to 'best' to include video
+                "quiet": True,
+                "get_url": True,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                url = f"https://www.youtube.com/watch?v={self.video_id}"
+                info = ydl.extract_info(url, download=False)
+                stream_url = info["url"]
+                self.stream_fetched.emit(stream_url)
+        except Exception as e:
+            self.error_occurred.emit(f"Failed to extract stream URL: {str(e)}")
 
 class VisualizerWidget(QWidget):
     """Simple audio visualizer widget."""
@@ -77,7 +148,7 @@ class TuneBlasterPlayer:
         self.media_player = QMediaPlayer(parent)
         self.media_player.setVideoOutput(self.parent.ui.video_display)
         self.playlist = []
-        self.web_tracks = []  # Stores (title, video_id)
+        self.web_tracks = []  # Stores (title, video_id, thumbnail, duration)
         self.cache_dir = os.path.expanduser("~/TuneBlaster_Cache")
         self.config_dir = os.path.expanduser("~/TuneBlaster_Config")
         os.makedirs(self.cache_dir, exist_ok=True)
@@ -85,11 +156,13 @@ class TuneBlasterPlayer:
         self.chunk_size = 10 * 1024 * 1024  # 10MB chunks
         self.playlist_file = os.path.join(self.config_dir, "playlist.json")
         self.youtube_api_key = "AIzaSyDSEGZTR-Aa17Y5jIJ-jyinl18l97bhYp4"  # Replace with your key
+        self.is_seeking = False
 
         # Connect signals
         self.media_player.durationChanged.connect(self.update_duration)
         self.media_player.positionChanged.connect(self.update_position)
         self.media_player.error.connect(self.handle_error)
+        self.media_player.seekableChanged.connect(self.on_seekable_changed)
 
     def toggle_playback(self):
         """Play or pause the media, like a musical yo-yo."""
@@ -155,7 +228,7 @@ class TuneBlasterPlayer:
         self.web_tracks = tracks
         self.update_track_list()
         if tracks:
-            title, video_id = random.choice(tracks)
+            title, video_id, _, _ = random.choice(tracks)
             self.play_youtube_track(video_id)
         logging.info(f"Fetched {len(self.web_tracks)} tracks from YouTube API")
 
@@ -167,18 +240,25 @@ class TuneBlasterPlayer:
     def play_from_list(self, item):
         """Play a YouTube track from the web track list when double-clicked."""
         index = self.parent.ui.track_list.row(item)
-        title, video_id = self.web_tracks[index]
+        title, video_id, _, _ = self.web_tracks[index]
         self.play_youtube_track(video_id)
 
     def play_youtube_track(self, video_id):
-        """Play a YouTube video by ID."""
-        url = f"https://www.youtube.com/watch?v={video_id}"
-        self.media_player.setMedia(QMediaContent(QUrl(url)))
+        """Extract and play a YouTube video stream by ID."""
+        self.stream_worker = StreamWorker(video_id)
+        self.stream_worker.stream_fetched.connect(self.on_stream_fetched)
+        self.stream_worker.error_occurred.connect(self.on_error)
+        self.stream_worker.start()
+        logging.info(f"Fetching stream for YouTube track: {video_id}")
+
+    def on_stream_fetched(self, stream_url):
+        """Play the extracted YouTube stream URL."""
+        self.media_player.setMedia(QMediaContent(QUrl(stream_url)))
         self.media_player.play()
         self.parent.ui.play_button.setText("Pause")
         fake_audio = np.random.randint(0, 255, 50).tolist()
         self.parent.ui.visualizer.set_audio_data(fake_audio)
-        logging.info(f"Playing YouTube track: {video_id}")
+        logging.info(f"Playing YouTube stream: {stream_url}")
 
     def filter_tracks(self, search_text):
         """Filter tracks by fetching new YouTube results based on search input."""
@@ -188,13 +268,21 @@ class TuneBlasterPlayer:
             self.worker.error_occurred.connect(self.on_error)
             self.worker.start()
         else:
-            self.fetch_music()  # Default fetch if search is cleared
+            self.fetch_music()
 
     def update_track_list(self):
-        """Refresh the track list with fetched web tracks."""
+        """Refresh the track list with fetched web tracks, including thumbnails and durations."""
         self.parent.ui.track_list.clear()
-        for title, _ in self.web_tracks:
-            self.parent.ui.track_list.addItem(title)
+        for title, _, thumbnail, duration in self.web_tracks:
+            item_text = f"{title} [{duration}]"
+            item = self.parent.ui.track_list.add_item(item_text)
+            # Download and set thumbnail
+            try:
+                response = requests.get(thumbnail)
+                pixmap = QIcon(QPixmap.fromImage(QImage.fromData(response.content)))
+                item.setIcon(pixmap)
+            except Exception as e:
+                logging.error(f"Failed to load thumbnail: {str(e)}")
 
     def update_playlist_ui(self):
         """Refresh the playlist widget with current local files."""
@@ -235,9 +323,27 @@ class TuneBlasterPlayer:
             QMessageBox.critical(self.parent, "Load Error", f"Failed to load playlist: {str(e)}")
             logging.error(f"Playlist load failed: {str(e)}")
 
+    def start_seeking(self):
+        """Set seeking flag when slider is pressed."""
+        self.is_seeking = True
+
+    def stop_seeking(self):
+        """Apply seek position when slider is released."""
+        self.is_seeking = False
+        position = self.parent.ui.seek_slider.value()
+        self.seek(position)
+
     def seek(self, position):
         """Jump to a specific time in the media."""
-        self.media_player.setPosition(position)
+        if self.media_player.isSeekable():
+            self.media_player.setPosition(position)
+        else:
+            logging.warning("Media is not seekable")
+
+    def on_seekable_changed(self, seekable):
+        """Update seek slider enabled state."""
+        self.parent.ui.seek_slider.setEnabled(seekable)
+        logging.info(f"Seekable state changed: {seekable}")
 
     def set_volume(self, value):
         """Adjust volume, from whisper to wall-shaking."""
@@ -246,10 +352,12 @@ class TuneBlasterPlayer:
     def update_duration(self, duration):
         """Set seek slider range when media loads."""
         self.parent.ui.seek_slider.setRange(0, duration)
+        logging.info(f"Duration updated: {duration} ms")
 
     def update_position(self, position):
         """Update seek slider as media plays."""
-        self.parent.ui.seek_slider.setValue(position)
+        if not self.is_seeking:
+            self.parent.ui.seek_slider.setValue(position)
         fake_audio = np.random.randint(0, 255, 50).tolist()
         self.parent.ui.visualizer.set_audio_data(fake_audio)
 
