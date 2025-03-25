@@ -1,10 +1,1 @@
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.Python
-env/
-venv/
-dist/
-build/
-*.egg-info/
+PyQt5==5.15.10 # Using an older version because it is stable

@@ -1,22 +1,24 @@
 # core.py
-# The beating heart of our media player, where the magic starts
-
-from PyQt6.QtWidgets import QMainWindow
+"""Core module: The heart of our epic media player."""
+from PyQt5.QtWidgets import QMainWindow, QApplication
+import sys
 from ui import PlayerUI
-from player import MediaPlayerLogic
+from player import MediaPlayerBackend
 
 class MediaPlayerApp(QMainWindow):
-    """Main window class that ties everything together."""
+    """Main app window, the grand maestro of our media symphony."""
     def __init__(self):
         super().__init__()
-        # Set window title and size - big enough to impress, small enough to fit
-        self.setWindowTitle("GrooveMaster 3000")
-        self.resize(600, 400)
+        self.setWindowTitle("TuneBlaster 3000")
+        self.setGeometry(100, 100, 600, 400)
+        self.backend = MediaPlayerBackend(self)
+        self.ui = PlayerUI(self)
+        self.ui.setup_ui()
+        self.ui.play_btn.clicked.connect(self.backend.toggle_play)
+        self.ui.open_btn.clicked.connect(self.backend.open_media)
 
-        # Initialize the player logic (the brains)
-        self.player_logic = MediaPlayerLogic(self)
-        # Set up the UI (the pretty face)
-        self.ui = PlayerUI(self, self.player_logic)
-
-        # Make the UI the star of the show
-        self.setCentralWidget(self.ui)
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = MediaPlayerApp()
+    window.show()
+    sys.exit(app.exec_())
