@@ -2,8 +2,8 @@
 """Player module: Where the tunes and flicks come to life."""
 
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
-from PyQt5.QtWidgets import QFileDialog, QMessageBox, QWidget, QListWidgetItem
-from PyQt5.QtCore import QUrl, QThread, pyqtSignal, Qt, QtCore  # Added QtCore
+from PyQt5.QtWidgets import QFileDialog, QMessageBox, QWidget, QListWidgetItem, QMenu, QAction
+from PyQt5.QtCore import QUrl, QThread, pyqtSignal, Qt, QSize  # Added QSize
 from PyQt5.QtGui import QPainter, QColor, QIcon
 import logging
 import os
@@ -106,10 +106,11 @@ class FetchWorker(QThread):
         self.wait()
 
 class VisualizerWidget(QWidget):
-    """Simple audio visualizer widget."""
+    """Enhanced audio visualizer widget with dynamic colors."""
     def __init__(self, parent=None):
         super().__init__(parent)
         self.audio_data = []
+        self.color_phase = 0
 
     def set_audio_data(self, data):
         """Update visualizer with audio data."""
@@ -117,15 +118,18 @@ class VisualizerWidget(QWidget):
         self.update()
 
     def paintEvent(self, event):
-        """Draw the visualizer bars."""
+        """Draw the visualizer bars with dynamic colors."""
         painter = QPainter(self)
         painter.fillRect(self.rect(), Qt.black)
         if not self.audio_data:
             return
         bar_width = self.width() // len(self.audio_data)
+        self.color_phase = (self.color_phase + 1) % 360
         for i, value in enumerate(self.audio_data):
             height = int(value * self.height() / 255)
-            painter.setBrush(QColor(0, 255, 0))
+            hue = (self.color_phase + i * 10) % 360
+            color = QColor.fromHsv(hue, 255, 255)
+            painter.setBrush(color)
             painter.drawRect(i * bar_width, self.height() - height, bar_width - 2, height)
 
 class TuneBlasterPlayer:
@@ -134,6 +138,7 @@ class TuneBlasterPlayer:
         self.parent = parent
         self.media_player = QMediaPlayer(parent)
         self.playlist = []
+        self.queue = []  # New queue for tracks to be played
         self.web_tracks = []  # [(title, video_id, thumbnail_url), ...]
         self.cache_dir = os.path.expanduser("~/TuneBlaster_Cache")
         self.config_dir = os.path.expanduser("~/TuneBlaster_Config")
@@ -142,13 +147,14 @@ class TuneBlasterPlayer:
         self.chunk_size = 10 * 1024 * 1024  # 10MB chunks
         self.playlist_file = os.path.join(self.config_dir, "playlist.json")
         self.current_track = None
-        self.current_playlist_index = -1  # For navigation
+        self.current_playlist_index = -1
         self.workers = []
 
         # Connect signals
         self.media_player.durationChanged.connect(self.update_duration)
         self.media_player.positionChanged.connect(self.update_position)
         self.media_player.error.connect(self.handle_error)
+        self.media_player.mediaStatusChanged.connect(self.on_media_status_changed)  # For auto-playing queue
 
     def toggle_playback(self):
         """Play or pause the media, like a musical yo-yo."""
@@ -176,6 +182,53 @@ class TuneBlasterPlayer:
         fake_audio = np.random.randint(0, 255, 50).tolist()
         self.parent.ui.visualizer.set_audio_data(fake_audio)
         logging.info(f"Playing next track: {self.current_track}")
+
+    def play_prev_track(self):
+        """Play the previous track in the playlist."""
+        if not self.playlist:
+            QMessageBox.warning(self.parent, "Oops!", "No tracks in the playlist!")
+            return
+        self.current_playlist_index = (self.current_playlist_index - 1) % len(self.playlist)
+        self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(self.playlist[self.current_playlist_index])))
+        self.current_track = os.path.basename(self.playlist[self.current_playlist_index])
+        self.update_now_playing()
+        self.media_player.play()
+        self.parent.ui.play_button.setText("Pause")
+        fake_audio = np.random.randint(0, 255, 50).tolist()
+        self.parent.ui.visualizer.set_audio_data(fake_audio)
+        logging.info(f"Playing previous track: {self.current_track}")
+
+    def shuffle_playlist(self):
+        """Shuffle the playlist and start playing from the first track."""
+        if not self.playlist:
+            QMessageBox.warning(self.parent, "Oops!", "No tracks in the playlist to shuffle!")
+            return
+        shuffled_playlist = self.playlist.copy()
+        random.shuffle(shuffled_playlist)
+        self.playlist = shuffled_playlist
+        self.current_playlist_index = 0
+        self.update_playlist_ui()
+        self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(self.playlist[0])))
+        self.current_track = os.path.basename(self.playlist[0])
+        self.update_now_playing()
+        self.media_player.play()
+        self.parent.ui.play_button.setText("Pause")
+        fake_audio = np.random.randint(0, 255, 50).tolist()
+        self.parent.ui.visualizer.set_audio_data(fake_audio)
+        logging.info("Playlist shuffled and playing first track")
+
+    def clear_playlist(self):
+        """Clear the current playlist and queue."""
+        self.playlist = []
+        self.queue = []
+        self.current_playlist_index = -1
+        self.current_track = None
+        self.media_player.setMedia(QMediaContent())
+        self.update_playlist_ui()
+        self.update_now_playing()
+        self.parent.ui.play_button.setText("Play")
+        QMessageBox.information(self.parent, "Success", "Playlist and queue cleared!")
+        logging.info("Playlist and queue cleared")
 
     def load_local_media(self):
         """Load local files, splitting large ones."""
@@ -222,7 +275,7 @@ class TuneBlasterPlayer:
 
     def fetch_youtube(self):
         """Fetch default YouTube music content."""
-        self.parent.ui.download_progress.setValue(0)  # Reset progress
+        self.parent.ui.download_progress.setValue(0)
         worker = FetchWorker(self.cache_dir, query="music")
         self.workers.append(worker)
         worker.tracks_fetched.connect(self.on_tracks_fetched)
@@ -235,7 +288,7 @@ class TuneBlasterPlayer:
         """Search YouTube based on user input."""
         query = self.parent.ui.search_input.text().strip()
         if query:
-            self.parent.ui.download_progress.setValue(0)  # Reset progress
+            self.parent.ui.download_progress.setValue(0)
             worker = FetchWorker(self.cache_dir, query=query)
             self.workers.append(worker)
             worker.tracks_fetched.connect(self.on_tracks_fetched)
@@ -264,20 +317,20 @@ class TuneBlasterPlayer:
         self.parent.ui.play_button.setText("Pause")
         fake_audio = np.random.randint(0, 255, 50).tolist()
         self.parent.ui.visualizer.set_audio_data(fake_audio)
-        self.parent.ui.download_progress.setValue(100)  # Download complete
+        self.parent.ui.download_progress.setValue(100)
         logging.info(f"Playing downloaded track: {file_path}")
 
     def on_error(self, error_msg):
         """Handle errors from worker thread."""
         QMessageBox.critical(self.parent, "Error", error_msg)
-        self.parent.ui.download_progress.setValue(0)  # Reset on error
+        self.parent.ui.download_progress.setValue(0)
         logging.error(error_msg)
 
     def play_from_grid(self, item):
         """Play a track from the web track grid when double-clicked."""
         index = self.parent.ui.track_grid.row(item)
         title, video_id, _ = self.web_tracks[index]
-        self.parent.ui.download_progress.setValue(0)  # Reset progress
+        self.parent.ui.download_progress.setValue(0)
         worker = FetchWorker(self.cache_dir)
         self.workers.append(worker)
         worker.track_downloaded.connect(self.on_track_downloaded)
@@ -286,12 +339,58 @@ class TuneBlasterPlayer:
         worker.download_track(title, video_id)
         worker.start()
 
+    def show_context_menu(self, position):
+        """Show context menu for queuing tracks."""
+        item = self.parent.ui.track_grid.itemAt(position)
+        if not item:
+            return
+        index = self.parent.ui.track_grid.row(item)
+        menu = QMenu()
+        queue_action = QAction("Add to Queue", self.parent)
+        queue_action.triggered.connect(lambda: self.add_to_queue(index))
+        menu.addAction(queue_action)
+        menu.exec_(self.parent.ui.track_grid.mapToGlobal(position))
+
+    def add_to_queue(self, index):
+        """Add a track to the queue without playing it immediately."""
+        title, video_id, _ = self.web_tracks[index]
+        self.parent.ui.download_progress.setValue(0)
+        worker = FetchWorker(self.cache_dir)
+        self.workers.append(worker)
+        worker.track_downloaded.connect(lambda file_path: self.on_track_queued(file_path))
+        worker.error_occurred.connect(self.on_error)
+        worker.progress_updated.connect(self.parent.ui.download_progress.setValue)
+        worker.download_track(title, video_id)
+        worker.start()
+
+    def on_track_queued(self, file_path):
+        """Handle track added to queue."""
+        self.queue.append(file_path)
+        self.parent.ui.download_progress.setValue(100)
+        QMessageBox.information(self.parent, "Success", f"Track queued: {os.path.basename(file_path)}")
+        logging.info(f"Track queued: {file_path}")
+
+    def on_media_status_changed(self, status):
+        """Auto-play the next track from the queue when the current track ends."""
+        if status == QMediaPlayer.EndOfMedia and self.queue:
+            next_track = self.queue.pop(0)
+            self.playlist.append(next_track)
+            self.current_playlist_index = len(self.playlist) - 1
+            self.update_playlist_ui()
+            self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(next_track)))
+            self.current_track = os.path.basename(next_track)
+            self.update_now_playing()
+            self.media_player.play()
+            self.parent.ui.play_button.setText("Pause")
+            fake_audio = np.random.randint(0, 255, 50).tolist()
+            self.parent.ui.visualizer.set_audio_data(fake_audio)
+            logging.info(f"Playing queued track: {next_track}")
+
     def update_track_grid(self):
         """Refresh the track grid with fetched web tracks and thumbnails."""
         self.parent.ui.track_grid.clear()
         for title, _, thumbnail_url in self.web_tracks:
             item = QListWidgetItem()
-            # Download thumbnail and set as icon
             try:
                 response = requests.get(thumbnail_url)
                 response.raise_for_status()
@@ -301,7 +400,7 @@ class TuneBlasterPlayer:
             except Exception as e:
                 logging.error(f"Failed to download thumbnail: {str(e)}")
             item.setText(title)
-            item.setSizeHint(QtCore.QSize(150, 150))  # Adjust for grid
+            item.setSizeHint(QSize(150, 150))
             self.parent.ui.track_grid.addItem(item)
 
     def update_playlist_ui(self):

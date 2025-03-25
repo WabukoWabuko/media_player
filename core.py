@@ -21,11 +21,15 @@ class TuneBlasterApp(QMainWindow):
 
         # Connect UI signals to player slots
         self.ui.play_button.clicked.connect(self.player.toggle_playback)
-        self.ui.next_button.clicked.connect(self.player.play_next_track)  # New connection
+        self.ui.next_button.clicked.connect(self.player.play_next_track)
+        self.ui.prev_button.clicked.connect(self.player.play_prev_track)  # New connection
+        self.ui.shuffle_button.clicked.connect(self.player.shuffle_playlist)
+        self.ui.clear_button.clicked.connect(self.player.clear_playlist)
         self.ui.open_button.clicked.connect(self.player.load_local_media)
         self.ui.seek_slider.sliderMoved.connect(self.player.seek)
         self.ui.volume_slider.valueChanged.connect(self.player.set_volume)
         self.ui.track_grid.itemDoubleClicked.connect(self.player.play_from_grid)
+        self.ui.track_grid.customContextMenuRequested.connect(self.player.show_context_menu)  # New connection for queue
         self.ui.fetch_button.clicked.connect(self.player.fetch_youtube)
         self.ui.search_input.returnPressed.connect(self.player.search_youtube)
         self.ui.save_button.clicked.connect(self.player.save_playlist)

@@ -101,6 +101,9 @@ class TuneBlasterUI:
         self.next_button = QPushButton("Next")
         self.next_button.setStyleSheet("background-color: #1db954; color: white; padding: 5px; border-radius: 5px;")
         controls_layout.addWidget(self.next_button)
+        self.shuffle_button = QPushButton("Shuffle")
+        self.shuffle_button.setStyleSheet("background-color: #1db954; color: white; padding: 5px; border-radius: 5px;")
+        controls_layout.addWidget(self.shuffle_button)
         self.seek_slider = QSlider(Qt.Horizontal)
         self.seek_slider.setMinimum(0)
         self.seek_slider.setMaximum(1000)
@@ -117,7 +120,7 @@ class TuneBlasterUI:
         controls_layout.addWidget(self.open_button)
         now_playing_layout.addLayout(controls_layout)
 
-        # Account buttons
+        # Account and playlist buttons
         account_layout = QHBoxLayout()
         self.save_button = QPushButton("Save Playlist")
         self.save_button.setStyleSheet("background-color: #1db954; color: white; padding: 5px; border-radius: 5px;")
@@ -125,6 +128,9 @@ class TuneBlasterUI:
         self.load_button = QPushButton("Load Playlist")
         self.load_button.setStyleSheet("background-color: #1db954; color: white; padding: 5px; border-radius: 5px;")
         account_layout.addWidget(self.load_button)
+        self.clear_button = QPushButton("Clear Playlist")
+        self.clear_button.setStyleSheet("background-color: #ff5555; color: white; padding: 5px; border-radius: 5px;")
+        account_layout.addWidget(self.clear_button)
         now_playing_layout.addLayout(account_layout)
 
         content_layout.addLayout(now_playing_layout)
