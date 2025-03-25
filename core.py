@@ -10,7 +10,7 @@ class TuneBlasterApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("TuneBlaster 3000")
-        self.setGeometry(100, 100, 1200, 800)  # Larger for Spotify-like layout
+        self.setGeometry(100, 100, 1200, 800)
 
         # Setup UI first
         self.ui = TuneBlasterUI(self)
@@ -21,6 +21,7 @@ class TuneBlasterApp(QMainWindow):
 
         # Connect UI signals to player slots
         self.ui.play_button.clicked.connect(self.player.toggle_playback)
+        self.ui.next_button.clicked.connect(self.player.play_next_track)  # New connection
         self.ui.open_button.clicked.connect(self.player.load_local_media)
         self.ui.seek_slider.sliderMoved.connect(self.player.seek)
         self.ui.volume_slider.valueChanged.connect(self.player.set_volume)

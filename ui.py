@@ -1,7 +1,7 @@
 # ui.py
 """UI module: Dressing up TuneBlaster 3000 in style."""
 
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QSlider, QListWidget, QHBoxLayout, QLineEdit, QLabel
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QSlider, QListWidget, QHBoxLayout, QLineEdit, QLabel, QProgressBar
 from PyQt5.QtCore import Qt, QSize
 from player import VisualizerWidget
 
@@ -50,6 +50,12 @@ class TuneBlasterUI:
         search_layout.addWidget(self.fetch_button)
         content_layout.addLayout(search_layout)
 
+        # Download progress bar
+        self.download_progress = QProgressBar()
+        self.download_progress.setStyleSheet("background-color: #2a2a2a; color: #1db954;")
+        self.download_progress.setValue(0)
+        content_layout.addWidget(self.download_progress)
+
         # Track grid (like Spotify's "Good Morning" section)
         grid_label = QLabel("Discover Music")
         grid_label.setStyleSheet("font-size: 20px; font-weight: bold; color: white;")
@@ -92,6 +98,9 @@ class TuneBlasterUI:
         self.play_button = QPushButton("Play")
         self.play_button.setStyleSheet("background-color: #1db954; color: white; padding: 5px; border-radius: 5px;")
         controls_layout.addWidget(self.play_button)
+        self.next_button = QPushButton("Next")
+        self.next_button.setStyleSheet("background-color: #1db954; color: white; padding: 5px; border-radius: 5px;")
+        controls_layout.addWidget(self.next_button)
         self.seek_slider = QSlider(Qt.Horizontal)
         self.seek_slider.setMinimum(0)
         self.seek_slider.setMaximum(1000)

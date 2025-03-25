@@ -3,7 +3,7 @@
 
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtWidgets import QFileDialog, QMessageBox, QWidget, QListWidgetItem
-from PyQt5.QtCore import QUrl, QThread, pyqtSignal, Qt
+from PyQt5.QtCore import QUrl, QThread, pyqtSignal, Qt, QtCore  # Added QtCore
 from PyQt5.QtGui import QPainter, QColor, QIcon
 import logging
 import os
@@ -24,6 +24,7 @@ class FetchWorker(QThread):
     tracks_fetched = pyqtSignal(list)  # [(title, video_id, thumbnail_url), ...]
     track_downloaded = pyqtSignal(str)
     error_occurred = pyqtSignal(str)
+    progress_updated = pyqtSignal(int)  # For download progress
 
     def __init__(self, cache_dir, query="music"):
         super().__init__()
@@ -59,25 +60,41 @@ class FetchWorker(QThread):
             if tracks and self._running:
                 title, video_id, _ = random.choice(tracks)
                 self.download_track(title, video_id)
+        except requests.exceptions.RequestException as e:
+            if self._running:
+                self.error_occurred.emit(f"Network error while fetching YouTube content: {str(e)}")
         except Exception as e:
             if self._running:
                 self.error_occurred.emit(f"Failed to fetch YouTube content: {str(e)}")
 
     def download_track(self, title, video_id):
-        """Download a YouTube video as audio."""
+        """Download a YouTube video as audio with progress."""
         if not self._running:
             return
         try:
             url = f"https://www.youtube.com/watch?v={video_id}"
+
+            def progress_hook(d):
+                if d["status"] == "downloading":
+                    total = d.get("total_bytes", 0)
+                    downloaded = d.get("downloaded_bytes", 0)
+                    if total > 0:
+                        progress = int((downloaded / total) * 100)
+                        self.progress_updated.emit(progress)
+
             ydl_opts = {
                 "format": "bestaudio/best",
                 "outtmpl": os.path.join(self.cache_dir, f"{title}.%(ext)s"),
                 "quiet": True,
+                "progress_hooks": [progress_hook],
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=True)
                 file_path = ydl.prepare_filename(info)
                 self.track_downloaded.emit(file_path)
+        except requests.exceptions.RequestException as e:
+            if self._running:
+                self.error_occurred.emit(f"Network error while downloading: {str(e)}")
         except Exception as e:
             if self._running:
                 self.error_occurred.emit(f"Failed to download: {str(e)}")
@@ -116,7 +133,6 @@ class TuneBlasterPlayer:
     def __init__(self, parent):
         self.parent = parent
         self.media_player = QMediaPlayer(parent)
-        # Removed setVideoOutput since we're audio-only
         self.playlist = []
         self.web_tracks = []  # [(title, video_id, thumbnail_url), ...]
         self.cache_dir = os.path.expanduser("~/TuneBlaster_Cache")
@@ -126,6 +142,7 @@ class TuneBlasterPlayer:
         self.chunk_size = 10 * 1024 * 1024  # 10MB chunks
         self.playlist_file = os.path.join(self.config_dir, "playlist.json")
         self.current_track = None
+        self.current_playlist_index = -1  # For navigation
         self.workers = []
 
         # Connect signals
@@ -145,6 +162,21 @@ class TuneBlasterPlayer:
                 self.media_player.play()
                 self.parent.ui.play_button.setText("Pause")
 
+    def play_next_track(self):
+        """Play the next track in the playlist."""
+        if not self.playlist:
+            QMessageBox.warning(self.parent, "Oops!", "No tracks in the playlist!")
+            return
+        self.current_playlist_index = (self.current_playlist_index + 1) % len(self.playlist)
+        self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(self.playlist[self.current_playlist_index])))
+        self.current_track = os.path.basename(self.playlist[self.current_playlist_index])
+        self.update_now_playing()
+        self.media_player.play()
+        self.parent.ui.play_button.setText("Pause")
+        fake_audio = np.random.randint(0, 255, 50).tolist()
+        self.parent.ui.visualizer.set_audio_data(fake_audio)
+        logging.info(f"Playing next track: {self.current_track}")
+
     def load_local_media(self):
         """Load local files, splitting large ones."""
         file_paths, _ = QFileDialog.getOpenFileNames(
@@ -159,6 +191,7 @@ class TuneBlasterPlayer:
                     self.split_and_load(file_path)
                 else:
                     self.playlist.append(file_path)
+            self.current_playlist_index = 0
             self.update_playlist_ui()
             self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(self.playlist[0])))
             self.current_track = os.path.basename(self.playlist[0])
@@ -189,22 +222,26 @@ class TuneBlasterPlayer:
 
     def fetch_youtube(self):
         """Fetch default YouTube music content."""
+        self.parent.ui.download_progress.setValue(0)  # Reset progress
         worker = FetchWorker(self.cache_dir, query="music")
         self.workers.append(worker)
         worker.tracks_fetched.connect(self.on_tracks_fetched)
         worker.track_downloaded.connect(self.on_track_downloaded)
         worker.error_occurred.connect(self.on_error)
+        worker.progress_updated.connect(self.parent.ui.download_progress.setValue)
         worker.start()
 
     def search_youtube(self):
         """Search YouTube based on user input."""
         query = self.parent.ui.search_input.text().strip()
         if query:
+            self.parent.ui.download_progress.setValue(0)  # Reset progress
             worker = FetchWorker(self.cache_dir, query=query)
             self.workers.append(worker)
             worker.tracks_fetched.connect(self.on_tracks_fetched)
             worker.track_downloaded.connect(self.on_track_downloaded)
             worker.error_occurred.connect(self.on_error)
+            worker.progress_updated.connect(self.parent.ui.download_progress.setValue)
             worker.start()
         else:
             QMessageBox.warning(self.parent, "Oops!", "Enter a search term, ya dingus!")
@@ -218,6 +255,7 @@ class TuneBlasterPlayer:
     def on_track_downloaded(self, file_path):
         """Handle downloaded track from worker thread."""
         self.playlist.append(file_path)
+        self.current_playlist_index = len(self.playlist) - 1
         self.update_playlist_ui()
         self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(file_path)))
         self.current_track = os.path.basename(file_path)
@@ -226,21 +264,25 @@ class TuneBlasterPlayer:
         self.parent.ui.play_button.setText("Pause")
         fake_audio = np.random.randint(0, 255, 50).tolist()
         self.parent.ui.visualizer.set_audio_data(fake_audio)
+        self.parent.ui.download_progress.setValue(100)  # Download complete
         logging.info(f"Playing downloaded track: {file_path}")
 
     def on_error(self, error_msg):
         """Handle errors from worker thread."""
         QMessageBox.critical(self.parent, "Error", error_msg)
+        self.parent.ui.download_progress.setValue(0)  # Reset on error
         logging.error(error_msg)
 
     def play_from_grid(self, item):
         """Play a track from the web track grid when double-clicked."""
         index = self.parent.ui.track_grid.row(item)
         title, video_id, _ = self.web_tracks[index]
+        self.parent.ui.download_progress.setValue(0)  # Reset progress
         worker = FetchWorker(self.cache_dir)
         self.workers.append(worker)
         worker.track_downloaded.connect(self.on_track_downloaded)
         worker.error_occurred.connect(self.on_error)
+        worker.progress_updated.connect(self.parent.ui.download_progress.setValue)
         worker.download_track(title, video_id)
         worker.start()
 
@@ -294,6 +336,7 @@ class TuneBlasterPlayer:
                     data = json.load(f)
                     self.playlist = data.get("playlist", [])
                     self.web_tracks = data.get("web_tracks", [])
+                    self.current_playlist_index = 0
                     self.update_playlist_ui()
                     self.update_track_grid()
                     if self.playlist:
