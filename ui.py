@@ -1,7 +1,7 @@
 # ui.py
 """UI module: Dressing up TuneBlaster 3000 in style."""
 
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QSlider, QListWidget, QHBoxLayout, QLineEdit, QLabel, QProgressBar
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QSlider, QListWidget, QHBoxLayout, QComboBox, QLabel, QProgressBar
 from PyQt5.QtCore import Qt, QSize
 from player import VisualizerWidget
 
@@ -39,9 +39,10 @@ class TuneBlasterUI:
         content_widget = QWidget()
         content_layout = QVBoxLayout(content_widget)
 
-        # Search bar
+        # Search bar (now a QComboBox for history)
         search_layout = QHBoxLayout()
-        self.search_input = QLineEdit()
+        self.search_input = QComboBox()
+        self.search_input.setEditable(True)
         self.search_input.setPlaceholderText("Search YouTube (press Enter)...")
         self.search_input.setStyleSheet("background-color: #2a2a2a; color: white; padding: 5px; border-radius: 5px;")
         search_layout.addWidget(self.search_input)
@@ -82,6 +83,7 @@ class TuneBlasterUI:
         self.track_grid.setResizeMode(QListWidget.Adjust)
         self.track_grid.setIconSize(QSize(100, 100))
         self.track_grid.setFixedHeight(400)
+        self.track_grid.setContextMenuPolicy(Qt.CustomContextMenu)
         content_layout.addWidget(self.track_grid)
 
         # Now playing and controls
@@ -98,9 +100,15 @@ class TuneBlasterUI:
         self.play_button = QPushButton("Play")
         self.play_button.setStyleSheet("background-color: #1db954; color: white; padding: 5px; border-radius: 5px;")
         controls_layout.addWidget(self.play_button)
+        self.previous_button = QPushButton("Prev")  # Renamed to previous_button
+        self.previous_button.setStyleSheet("background-color: #1db954; color: white; padding: 5px; border-radius: 5px;")
+        controls_layout.addWidget(self.previous_button)
         self.next_button = QPushButton("Next")
         self.next_button.setStyleSheet("background-color: #1db954; color: white; padding: 5px; border-radius: 5px;")
         controls_layout.addWidget(self.next_button)
+        self.repeat_button = QPushButton("Repeat: Off")
+        self.repeat_button.setStyleSheet("background-color: #1db954; color: white; padding: 5px; border-radius: 5px;")
+        controls_layout.addWidget(self.repeat_button)
         self.shuffle_button = QPushButton("Shuffle")
         self.shuffle_button.setStyleSheet("background-color: #1db954; color: white; padding: 5px; border-radius: 5px;")
         controls_layout.addWidget(self.shuffle_button)

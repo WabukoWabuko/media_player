@@ -3,7 +3,7 @@
 
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtWidgets import QFileDialog, QMessageBox, QWidget, QListWidgetItem, QMenu, QAction
-from PyQt5.QtCore import QUrl, QThread, pyqtSignal, Qt, QSize  # Added QSize
+from PyQt5.QtCore import QUrl, QThread, pyqtSignal, Qt, QSize
 from PyQt5.QtGui import QPainter, QColor, QIcon
 import logging
 import os
@@ -138,8 +138,9 @@ class TuneBlasterPlayer:
         self.parent = parent
         self.media_player = QMediaPlayer(parent)
         self.playlist = []
-        self.queue = []  # New queue for tracks to be played
-        self.web_tracks = []  # [(title, video_id, thumbnail_url), ...]
+        self.queue = []
+        self.web_tracks = []
+        self.search_history = []  # New: Store recent searches
         self.cache_dir = os.path.expanduser("~/TuneBlaster_Cache")
         self.config_dir = os.path.expanduser("~/TuneBlaster_Config")
         os.makedirs(self.cache_dir, exist_ok=True)
@@ -149,12 +150,13 @@ class TuneBlasterPlayer:
         self.current_track = None
         self.current_playlist_index = -1
         self.workers = []
+        self.repeat_mode = 0  # 0: off, 1: repeat track, 2: repeat playlist
 
         # Connect signals
         self.media_player.durationChanged.connect(self.update_duration)
         self.media_player.positionChanged.connect(self.update_position)
         self.media_player.error.connect(self.handle_error)
-        self.media_player.mediaStatusChanged.connect(self.on_media_status_changed)  # For auto-playing queue
+        self.media_player.mediaStatusChanged.connect(self.on_media_status_changed)
 
     def toggle_playback(self):
         """Play or pause the media, like a musical yo-yo."""
@@ -197,6 +199,13 @@ class TuneBlasterPlayer:
         fake_audio = np.random.randint(0, 255, 50).tolist()
         self.parent.ui.visualizer.set_audio_data(fake_audio)
         logging.info(f"Playing previous track: {self.current_track}")
+
+    def toggle_repeat(self):
+        """Toggle repeat mode: off -> repeat track -> repeat playlist."""
+        self.repeat_mode = (self.repeat_mode + 1) % 3
+        modes = {0: "Off", 1: "Track", 2: "Playlist"}
+        self.parent.ui.repeat_button.setText(f"Repeat: {modes[self.repeat_mode]}")
+        logging.info(f"Repeat mode set to: {modes[self.repeat_mode]}")
 
     def shuffle_playlist(self):
         """Shuffle the playlist and start playing from the first track."""
@@ -286,8 +295,15 @@ class TuneBlasterPlayer:
 
     def search_youtube(self):
         """Search YouTube based on user input."""
-        query = self.parent.ui.search_input.text().strip()
+        query = self.parent.ui.search_input.currentText().strip()
         if query:
+            if query not in self.search_history:
+                self.search_history.append(query)
+                if len(self.search_history) > 10:  # Limit history to 10 items
+                    self.search_history.pop(0)
+                self.parent.ui.search_input.clear()
+                self.parent.ui.search_input.addItems(self.search_history)
+                self.parent.ui.search_input.setCurrentText(query)
             self.parent.ui.download_progress.setValue(0)
             worker = FetchWorker(self.cache_dir, query=query)
             self.workers.append(worker)
@@ -371,8 +387,20 @@ class TuneBlasterPlayer:
         logging.info(f"Track queued: {file_path}")
 
     def on_media_status_changed(self, status):
-        """Auto-play the next track from the queue when the current track ends."""
-        if status == QMediaPlayer.EndOfMedia and self.queue:
+        """Handle media status changes for repeat and queue."""
+        if status != QMediaPlayer.EndOfMedia:
+            return
+
+        if self.repeat_mode == 1:  # Repeat track
+            self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(self.playlist[self.current_playlist_index])))
+            self.media_player.play()
+            self.parent.ui.play_button.setText("Pause")
+            fake_audio = np.random.randint(0, 255, 50).tolist()
+            self.parent.ui.visualizer.set_audio_data(fake_audio)
+            logging.info(f"Repeating track: {self.current_track}")
+        elif self.repeat_mode == 2:  # Repeat playlist
+            self.play_next_track()
+        elif self.queue:  # Play from queue
             next_track = self.queue.pop(0)
             self.playlist.append(next_track)
             self.current_playlist_index = len(self.playlist) - 1
@@ -420,7 +448,7 @@ class TuneBlasterPlayer:
         """Save the current playlist to a JSON file."""
         try:
             with open(self.playlist_file, "w") as f:
-                json.dump({"playlist": self.playlist, "web_tracks": self.web_tracks}, f)
+                json.dump({"playlist": self.playlist, "web_tracks": self.web_tracks, "search_history": self.search_history}, f)
             QMessageBox.information(self.parent, "Success", "Playlist saved!")
             logging.info("Playlist saved to JSON")
         except Exception as e:
@@ -435,9 +463,12 @@ class TuneBlasterPlayer:
                     data = json.load(f)
                     self.playlist = data.get("playlist", [])
                     self.web_tracks = data.get("web_tracks", [])
+                    self.search_history = data.get("search_history", [])
                     self.current_playlist_index = 0
                     self.update_playlist_ui()
                     self.update_track_grid()
+                    self.parent.ui.search_input.clear()
+                    self.parent.ui.search_input.addItems(self.search_history)
                     if self.playlist:
                         self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(self.playlist[0])))
                         self.current_track = os.path.basename(self.playlist[0])
