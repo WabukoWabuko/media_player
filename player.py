@@ -11,6 +11,11 @@ class TuneBlasterPlayer:
         self.parent = parent
         self.media_player = QMediaPlayer(parent)
         self.media_player.setVideoOutput(self.parent.ui.video_display)
+        self.playlist = []  # Store file paths
+
+        # Connect player signals for seek slider
+        self.media_player.durationChanged.connect(self.update_duration)
+        self.media_player.positionChanged.connect(self.update_position)
 
     def toggle_playback(self):
         """Play or pause the media, like a musical yo-yo."""
@@ -22,15 +27,46 @@ class TuneBlasterPlayer:
             self.parent.ui.play_button.setText("Pause")
 
     def load_media(self):
-        """Load a file, time to cue up the next banger!"""
-        file_path, _ = QFileDialog.getOpenFileName(
+        """Load files, time to cue up the next banger!"""
+        file_paths, _ = QFileDialog.getOpenFileNames(
             self.parent,
-            "Select a Media File",
+            "Select Media Files",
             "",
             "Media Files (*.mp3 *.wav *.mp4 *.avi *.mkv);;All Files (*)"
         )
-        if file_path:
-            media_content = QMediaContent(QUrl.fromLocalFile(file_path))
-            self.media_player.setMedia(media_content)
+        if file_paths:
+            self.playlist.extend(file_paths)
+            self.update_playlist_ui()
+            # Play the first file immediately
+            self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(file_paths[0])))
             self.media_player.play()
             self.parent.ui.play_button.setText("Pause")
+
+    def play_from_playlist(self, item):
+        """Play a file from the playlist when double-clicked."""
+        file_path = item.text()
+        self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(file_path)))
+        self.media_player.play()
+        self.parent.ui.play_button.setText("Pause")
+
+    def update_playlist_ui(self):
+        """Refresh the playlist widget with current files."""
+        self.parent.ui.playlist_widget.clear()
+        for file_path in self.playlist:
+            self.parent.ui.playlist_widget.addItem(file_path)
+
+    def seek(self, position):
+        """Jump to a specific time in the media."""
+        self.media_player.setPosition(position)
+
+    def set_volume(self, value):
+        """Adjust volume, from whisper to wall-shaking."""
+        self.media_player.setVolume(value)
+
+    def update_duration(self, duration):
+        """Set seek slider range when media loads."""
+        self.parent.ui.seek_slider.setRange(0, duration)
+
+    def update_position(self, position):
+        """Update seek slider as media plays."""
+        self.parent.ui.seek_slider.setValue(position)
