@@ -10,7 +10,7 @@ class TuneBlasterApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("TuneBlaster 3000")
-        self.setGeometry(100, 100, 800, 600)  # Adjusted for track list
+        self.setGeometry(100, 100, 800, 600)
 
         # Setup UI first
         self.ui = TuneBlasterUI(self)
@@ -27,3 +27,5 @@ class TuneBlasterApp(QMainWindow):
         self.ui.track_list.itemDoubleClicked.connect(self.player.play_from_list)
         self.ui.fetch_button.clicked.connect(self.player.fetch_music)
         self.ui.search_input.textChanged.connect(self.player.filter_tracks)
+        self.ui.save_button.clicked.connect(self.player.save_playlist)
+        self.ui.load_button.clicked.connect(self.player.load_playlist)

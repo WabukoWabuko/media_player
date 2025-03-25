@@ -4,6 +4,7 @@
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QSlider, QListWidget, QHBoxLayout, QLineEdit
 from PyQt5.QtMultimediaWidgets import QVideoWidget
 from PyQt5.QtCore import Qt
+from player import VisualizerWidget
 
 class TuneBlasterUI:
     """UI handler: Making our player look good and play nice."""
@@ -18,6 +19,11 @@ class TuneBlasterUI:
 
         self.video_display = QVideoWidget()
         main_layout.addWidget(self.video_display)
+
+        # Visualizer
+        self.visualizer = VisualizerWidget()
+        self.visualizer.setFixedHeight(100)
+        main_layout.addWidget(self.visualizer)
 
         # Search and fetch layout
         search_layout = QHBoxLayout()
@@ -48,6 +54,14 @@ class TuneBlasterUI:
         self.open_button = QPushButton("Open Local Files")
         controls_layout.addWidget(self.open_button)
         main_layout.addLayout(controls_layout)
+
+        # Account buttons
+        account_layout = QHBoxLayout()
+        self.save_button = QPushButton("Save Playlist")
+        account_layout.addWidget(self.save_button)
+        self.load_button = QPushButton("Load Playlist")
+        account_layout.addWidget(self.load_button)
+        main_layout.addLayout(account_layout)
 
         # Playlist widget (downloaded files)
         self.playlist_widget = QListWidget()

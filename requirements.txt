@@ -1,3 +1,4 @@
 PyQt5==5.15.10 # Using an older version because it is stable
 spotdl==4.2.6
 yt-dlp==2023.12.30  # For Boomplay downloading
+numpy

@@ -2,16 +2,86 @@
 """Player module: Where the tunes and flicks come to life."""
 
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
-from PyQt5.QtWidgets import QFileDialog, QMessageBox
-from PyQt5.QtCore import QUrl
+from PyQt5.QtWidgets import QFileDialog, QMessageBox, QWidget
+from PyQt5.QtCore import QUrl, QThread, pyqtSignal, Qt
+from PyQt5.QtGui import QPainter, QColor
 import logging
 import yt_dlp
 import os
-from threading import Thread
 import random
+import numpy as np
+import json
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+class FetchWorker(QThread):
+    """Worker thread for fetching and downloading music."""
+    tracks_fetched = pyqtSignal(list)
+    track_downloaded = pyqtSignal(str)
+    error_occurred = pyqtSignal(str)
+
+    def __init__(self, cache_dir):
+        super().__init__()
+        self.cache_dir = cache_dir
+
+    def run(self):
+        """Scrape YouTube for music tracks."""
+        try:
+            search_query = "music -inurl:(signup login)"
+            ydl_opts = {
+                "format": "bestaudio/best",
+                "quiet": True,
+                "extract_flat": True,
+                "default_search": "ytsearch20",
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                result = ydl.extract_info(search_query, download=False)
+                tracks = [(entry["title"], entry["url"]) for entry in result["entries"]]
+                self.tracks_fetched.emit(tracks)
+                if tracks:
+                    title, url = random.choice(tracks)
+                    self.download_track(title, url)
+        except Exception as e:
+            self.error_occurred.emit(f"Failed to fetch music: {str(e)}")
+
+    def download_track(self, title, url):
+        """Download a specific track."""
+        try:
+            ydl_opts = {
+                "format": "bestaudio/best",
+                "outtmpl": os.path.join(self.cache_dir, f"{title}.%(ext)s"),
+                "quiet": True,
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                file_path = ydl.prepare_filename(info)
+                self.track_downloaded.emit(file_path)
+        except Exception as e:
+            self.error_occurred.emit(f"Failed to download: {str(e)}")
+
+class VisualizerWidget(QWidget):
+    """Simple audio visualizer widget."""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.audio_data = []
+
+    def set_audio_data(self, data):
+        """Update visualizer with audio data."""
+        self.audio_data = data
+        self.update()
+
+    def paintEvent(self, event):
+        """Draw the visualizer bars."""
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), Qt.black)
+        if not self.audio_data:
+            return
+        bar_width = self.width() // len(self.audio_data)
+        for i, value in enumerate(self.audio_data):
+            height = int(value * self.height() / 255)
+            painter.setBrush(QColor(0, 255, 0))
+            painter.drawRect(i * bar_width, self.height() - height, bar_width - 2, height)
 
 class TuneBlasterPlayer:
     """Playback engine: The DJ spinning the tracks."""
@@ -19,10 +89,14 @@ class TuneBlasterPlayer:
         self.parent = parent
         self.media_player = QMediaPlayer(parent)
         self.media_player.setVideoOutput(self.parent.ui.video_display)
-        self.playlist = []  # Local files
-        self.web_tracks = []  # Scraped tracks: (title, url)
+        self.playlist = []
+        self.web_tracks = []
         self.cache_dir = os.path.expanduser("~/TuneBlaster_Cache")
+        self.config_dir = os.path.expanduser("~/TuneBlaster_Config")
         os.makedirs(self.cache_dir, exist_ok=True)
+        os.makedirs(self.config_dir, exist_ok=True)
+        self.chunk_size = 10 * 1024 * 1024  # 10MB chunks
+        self.playlist_file = os.path.join(self.config_dir, "playlist.json")
 
         # Connect signals
         self.media_player.durationChanged.connect(self.update_duration)
@@ -36,13 +110,13 @@ class TuneBlasterPlayer:
             self.parent.ui.play_button.setText("Play")
         else:
             if self.media_player.media().isNull():
-                self.fetch_music()  # Auto-fetch if nothing’s loaded
+                self.fetch_music()
             else:
                 self.media_player.play()
                 self.parent.ui.play_button.setText("Pause")
 
     def load_local_media(self):
-        """Load local files, time to cue up the next banger!"""
+        """Load local files, splitting large ones."""
         file_paths, _ = QFileDialog.getOpenFileNames(
             self.parent,
             "Select Media Files",
@@ -50,72 +124,81 @@ class TuneBlasterPlayer:
             "Media Files (*.mp3 *.wav *.mp4 *.avi *.mkv);;All Files (*)"
         )
         if file_paths:
-            self.playlist.extend(file_paths)
+            for file_path in file_paths:
+                if os.path.getsize(file_path) > self.chunk_size:
+                    self.split_and_load(file_path)
+                else:
+                    self.playlist.append(file_path)
             self.update_playlist_ui()
-            self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(file_paths[0])))
+            self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(self.playlist[0])))
             self.media_player.play()
             self.parent.ui.play_button.setText("Pause")
             logging.info(f"Loaded local files: {file_paths}")
 
+    def split_and_load(self, file_path):
+        """Split large files into chunks and add to playlist."""
+        try:
+            base_name = os.path.splitext(file_path)[0]
+            with open(file_path, "rb") as f:
+                part_num = 0
+                while True:
+                    chunk = f.read(self.chunk_size)
+                    if not chunk:
+                        break
+                    chunk_path = f"{base_name}_part{part_num}.mp3"
+                    with open(chunk_path, "wb") as chunk_file:
+                        chunk_file.write(chunk)
+                    self.playlist.append(chunk_path)
+                    part_num += 1
+            logging.info(f"Split {file_path} into {part_num} parts")
+        except Exception as e:
+            QMessageBox.critical(self.parent, "Split Error", f"Failed to split file: {str(e)}")
+            logging.error(f"File split failed: {str(e)}")
+
     def fetch_music(self):
-        """Fetch music from YouTube and play a random track."""
-        Thread(target=self.scrape_youtube).start()
+        """Start fetching music in a worker thread."""
+        self.worker = FetchWorker(self.cache_dir)
+        self.worker.tracks_fetched.connect(self.on_tracks_fetched)
+        self.worker.track_downloaded.connect(self.on_track_downloaded)
+        self.worker.error_occurred.connect(self.on_error)
+        self.worker.start()
 
-    def scrape_youtube(self):
-        """Scrape YouTube for music tracks."""
-        try:
-            # Simple search for "music" (could expand with genres later)
-            search_query = "music -inurl:(signup login)"
-            ydl_opts = {
-                "format": "bestaudio/best",
-                "quiet": True,
-                "extract_flat": True,  # Get metadata without downloading yet
-                "default_search": "ytsearch20",  # Fetch 20 results
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                result = ydl.extract_info(search_query, download=False)
-                self.web_tracks = [(entry["title"], entry["url"]) for entry in result["entries"]]
-                self.update_track_list()
-                # Play a random track
-                if self.web_tracks:
-                    title, url = random.choice(self.web_tracks)
-                    self.download_and_play(title, url)
-                    logging.info(f"Fetched {len(self.web_tracks)} tracks from YouTube")
-        except Exception as e:
-            QMessageBox.critical(self.parent, "Fetch Error", f"Failed to fetch music: {str(e)}")
-            logging.error(f"YouTube scrape failed: {str(e)}")
+    def on_tracks_fetched(self, tracks):
+        """Handle fetched tracks from worker thread."""
+        self.web_tracks = tracks
+        self.update_track_list()
+        logging.info(f"Fetched {len(self.web_tracks)} tracks from YouTube")
 
-    def download_and_play(self, title, url):
-        """Download a track and play it."""
-        try:
-            ydl_opts = {
-                "format": "bestaudio/best",
-                "outtmpl": os.path.join(self.cache_dir, f"{title}.%(ext)s"),
-                "quiet": True,
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                file_path = ydl.prepare_filename(info)
-                self.playlist.append(file_path)
-                self.update_playlist_ui()
-                self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(file_path)))
-                self.media_player.play()
-                self.parent.ui.play_button.setText("Pause")
-                logging.info(f"Playing downloaded track: {file_path}")
-        except Exception as e:
-            QMessageBox.critical(self.parent, "Download Error", f"Failed to download: {str(e)}")
-            logging.error(f"Download failed: {str(e)}")
+    def on_track_downloaded(self, file_path):
+        """Handle downloaded track from worker thread."""
+        self.playlist.append(file_path)
+        self.update_playlist_ui()
+        self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(file_path)))
+        self.media_player.play()
+        self.parent.ui.play_button.setText("Pause")
+        fake_audio = np.random.randint(0, 255, 50).tolist()
+        self.parent.ui.visualizer.set_audio_data(fake_audio)
+        logging.info(f"Playing downloaded track: {file_path}")
+
+    def on_error(self, error_msg):
+        """Handle errors from worker thread."""
+        QMessageBox.critical(self.parent, "Error", error_msg)
+        logging.error(error_msg)
 
     def play_from_list(self, item):
         """Play a track from the web track list when double-clicked."""
         index = self.parent.ui.track_list.row(item)
         title, url = self.web_tracks[index]
-        self.download_and_play(title, url)
+        worker = FetchWorker(self.cache_dir)
+        worker.track_downloaded.connect(self.on_track_downloaded)
+        worker.error_occurred.connect(self.on_error)
+        worker.download_track(title, url)
+        worker.start()
 
     def filter_tracks(self, search_text):
         """Filter the track list based on search input."""
         self.parent.ui.track_list.clear()
-        for title, url in self.web_tracks:
+        for title, _ in self.web_tracks:
             if search_text.lower() in title.lower():
                 self.parent.ui.track_list.addItem(title)
 
@@ -130,6 +213,39 @@ class TuneBlasterPlayer:
         self.parent.ui.playlist_widget.clear()
         for file_path in self.playlist:
             self.parent.ui.playlist_widget.addItem(file_path)
+
+    def save_playlist(self):
+        """Save the current playlist to a JSON file."""
+        try:
+            with open(self.playlist_file, "w") as f:
+                json.dump({"playlist": self.playlist, "web_tracks": self.web_tracks}, f)
+            QMessageBox.information(self.parent, "Success", "Playlist saved!")
+            logging.info("Playlist saved to JSON")
+        except Exception as e:
+            QMessageBox.critical(self.parent, "Save Error", f"Failed to save playlist: {str(e)}")
+            logging.error(f"Playlist save failed: {str(e)}")
+
+    def load_playlist(self):
+        """Load a saved playlist from a JSON file."""
+        try:
+            if os.path.exists(self.playlist_file):
+                with open(self.playlist_file, "r") as f:
+                    data = json.load(f)
+                    self.playlist = data.get("playlist", [])
+                    self.web_tracks = data.get("web_tracks", [])
+                    self.update_playlist_ui()
+                    self.update_track_list()
+                    if self.playlist:
+                        self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(self.playlist[0])))
+                        self.media_player.play()
+                        self.parent.ui.play_button.setText("Pause")
+                    QMessageBox.information(self.parent, "Success", "Playlist loaded!")
+                    logging.info("Playlist loaded from JSON")
+            else:
+                QMessageBox.warning(self.parent, "Oops!", "No saved playlist found!")
+        except Exception as e:
+            QMessageBox.critical(self.parent, "Load Error", f"Failed to load playlist: {str(e)}")
+            logging.error(f"Playlist load failed: {str(e)}")
 
     def seek(self, position):
         """Jump to a specific time in the media."""
@@ -146,6 +262,8 @@ class TuneBlasterPlayer:
     def update_position(self, position):
         """Update seek slider as media plays."""
         self.parent.ui.seek_slider.setValue(position)
+        fake_audio = np.random.randint(0, 255, 50).tolist()
+        self.parent.ui.visualizer.set_audio_data(fake_audio)
 
     def handle_error(self, error):
         """Show a popup if something goes wrong."""
