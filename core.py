@@ -10,7 +10,7 @@ class TuneBlasterApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("TuneBlaster 3000")
-        self.setGeometry(100, 100, 800, 600)
+        self.setGeometry(100, 100, 1200, 800)  # Larger for Spotify-like layout
 
         # Setup UI first
         self.ui = TuneBlasterUI(self)
@@ -23,11 +23,14 @@ class TuneBlasterApp(QMainWindow):
         self.ui.play_button.clicked.connect(self.player.toggle_playback)
         self.ui.open_button.clicked.connect(self.player.load_local_media)
         self.ui.seek_slider.sliderMoved.connect(self.player.seek)
-        self.ui.seek_slider.sliderPressed.connect(self.player.start_seeking)
-        self.ui.seek_slider.sliderReleased.connect(self.player.stop_seeking)
         self.ui.volume_slider.valueChanged.connect(self.player.set_volume)
-        self.ui.track_list.itemDoubleClicked.connect(self.player.play_from_list)
-        self.ui.fetch_button.clicked.connect(self.player.fetch_music)
-        self.ui.search_input.textChanged.connect(self.player.filter_tracks)
+        self.ui.track_grid.itemDoubleClicked.connect(self.player.play_from_grid)
+        self.ui.fetch_button.clicked.connect(self.player.fetch_youtube)
+        self.ui.search_input.returnPressed.connect(self.player.search_youtube)
         self.ui.save_button.clicked.connect(self.player.save_playlist)
         self.ui.load_button.clicked.connect(self.player.load_playlist)
+
+    def closeEvent(self, event):
+        """Ensure threads are terminated on close."""
+        self.player.cleanup()
+        event.accept()
