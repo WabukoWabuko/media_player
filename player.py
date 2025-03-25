@@ -6,59 +6,45 @@ from PyQt5.QtWidgets import QFileDialog, QMessageBox, QWidget
 from PyQt5.QtCore import QUrl, QThread, pyqtSignal, Qt
 from PyQt5.QtGui import QPainter, QColor
 import logging
-import yt_dlp
 import os
 import random
 import numpy as np
 import json
+import requests  # For YouTube API calls
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 class FetchWorker(QThread):
-    """Worker thread for fetching and downloading music."""
-    tracks_fetched = pyqtSignal(list)
-    track_downloaded = pyqtSignal(str)
-    error_occurred = pyqtSignal(str)
+    """Worker thread for fetching YouTube content via API."""
+    tracks_fetched = pyqtSignal(list)  # Signal for fetched tracks: [(title, video_id), ...]
+    error_occurred = pyqtSignal(str)   # Signal for errors
 
-    def __init__(self, cache_dir):
+    def __init__(self, api_key):
         super().__init__()
-        self.cache_dir = cache_dir
+        self.api_key = api_key
 
     def run(self):
-        """Scrape YouTube for music tracks."""
+        """Fetch music videos from YouTube API."""
         try:
-            search_query = "music -inurl:(signup login)"
-            ydl_opts = {
-                "format": "bestaudio/best",
-                "quiet": True,
-                "extract_flat": True,
-                "default_search": "ytsearch20",
+            url = "https://www.googleapis.com/youtube/v3/search"
+            params = {
+                "part": "snippet",
+                "q": "music -inurl:(signup login)",  # Default query
+                "type": "video",
+                "maxResults": 20,
+                "key": self.api_key,
+                "videoCategoryId": "10",  # Music category
             }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                result = ydl.extract_info(search_query, download=False)
-                tracks = [(entry["title"], entry["url"]) for entry in result["entries"]]
+            response = requests.get(url, params=params)
+            data = response.json()
+            if "items" in data:
+                tracks = [(item["snippet"]["title"], item["id"]["videoId"]) for item in data["items"]]
                 self.tracks_fetched.emit(tracks)
-                if tracks:
-                    title, url = random.choice(tracks)
-                    self.download_track(title, url)
+            else:
+                self.error_occurred.emit("No tracks found in YouTube API response")
         except Exception as e:
-            self.error_occurred.emit(f"Failed to fetch music: {str(e)}")
-
-    def download_track(self, title, url):
-        """Download a specific track."""
-        try:
-            ydl_opts = {
-                "format": "bestaudio/best",
-                "outtmpl": os.path.join(self.cache_dir, f"{title}.%(ext)s"),
-                "quiet": True,
-            }
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                file_path = ydl.prepare_filename(info)
-                self.track_downloaded.emit(file_path)
-        except Exception as e:
-            self.error_occurred.emit(f"Failed to download: {str(e)}")
+            self.error_occurred.emit(f"Failed to fetch YouTube content: {str(e)}")
 
 class VisualizerWidget(QWidget):
     """Simple audio visualizer widget."""
@@ -90,13 +76,14 @@ class TuneBlasterPlayer:
         self.media_player = QMediaPlayer(parent)
         self.media_player.setVideoOutput(self.parent.ui.video_display)
         self.playlist = []
-        self.web_tracks = []
+        self.web_tracks = []  # Now stores (title, video_id)
         self.cache_dir = os.path.expanduser("~/TuneBlaster_Cache")
         self.config_dir = os.path.expanduser("~/TuneBlaster_Config")
         os.makedirs(self.cache_dir, exist_ok=True)
         os.makedirs(self.config_dir, exist_ok=True)
         self.chunk_size = 10 * 1024 * 1024  # 10MB chunks
         self.playlist_file = os.path.join(self.config_dir, "playlist.json")
+        self.youtube_api_key = "AIzaSyDSEGZTR-Aa17Y5jIJ-jyinl18l97bhYp4"  # Replace with your key
 
         # Connect signals
         self.media_player.durationChanged.connect(self.update_duration)
@@ -156,10 +143,9 @@ class TuneBlasterPlayer:
             logging.error(f"File split failed: {str(e)}")
 
     def fetch_music(self):
-        """Start fetching music in a worker thread."""
-        self.worker = FetchWorker(self.cache_dir)
+        """Start fetching YouTube content in a worker thread."""
+        self.worker = FetchWorker(self.youtube_api_key)
         self.worker.tracks_fetched.connect(self.on_tracks_fetched)
-        self.worker.track_downloaded.connect(self.on_track_downloaded)
         self.worker.error_occurred.connect(self.on_error)
         self.worker.start()
 
@@ -167,18 +153,11 @@ class TuneBlasterPlayer:
         """Handle fetched tracks from worker thread."""
         self.web_tracks = tracks
         self.update_track_list()
-        logging.info(f"Fetched {len(self.web_tracks)} tracks from YouTube")
-
-    def on_track_downloaded(self, file_path):
-        """Handle downloaded track from worker thread."""
-        self.playlist.append(file_path)
-        self.update_playlist_ui()
-        self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(file_path)))
-        self.media_player.play()
-        self.parent.ui.play_button.setText("Pause")
-        fake_audio = np.random.randint(0, 255, 50).tolist()
-        self.parent.ui.visualizer.set_audio_data(fake_audio)
-        logging.info(f"Playing downloaded track: {file_path}")
+        # Play a random track
+        if tracks:
+            title, video_id = random.choice(tracks)
+            self.play_youtube_track(video_id)
+        logging.info(f"Fetched {len(self.web_tracks)} tracks from YouTube API")
 
     def on_error(self, error_msg):
         """Handle errors from worker thread."""
@@ -186,21 +165,54 @@ class TuneBlasterPlayer:
         logging.error(error_msg)
 
     def play_from_list(self, item):
-        """Play a track from the web track list when double-clicked."""
+        """Play a YouTube track from the web track list when double-clicked."""
         index = self.parent.ui.track_list.row(item)
-        title, url = self.web_tracks[index]
-        worker = FetchWorker(self.cache_dir)
-        worker.track_downloaded.connect(self.on_track_downloaded)
-        worker.error_occurred.connect(self.on_error)
-        worker.download_track(title, url)
-        worker.start()
+        title, video_id = self.web_tracks[index]
+        self.play_youtube_track(video_id)
+
+    def play_youtube_track(self, video_id):
+        """Play a YouTube video by ID."""
+        url = f"https://www.youtube.com/watch?v={video_id}"
+        self.media_player.setMedia(QMediaContent(QUrl(url)))
+        self.media_player.play()
+        self.parent.ui.play_button.setText("Pause")
+        # Fake audio data for visualizer (real data needs audio analysis)
+        fake_audio = np.random.randint(0, 255, 50).tolist()
+        self.parent.ui.visualizer.set_audio_data(fake_audio)
+        logging.info(f"Playing YouTube track: {video_id}")
 
     def filter_tracks(self, search_text):
-        """Filter the track list based on search input."""
-        self.parent.ui.track_list.clear()
-        for title, _ in self.web_tracks:
-            if search_text.lower() in title.lower():
-                self.parent.ui.track_list.addItem(title)
+        """Filter the track list based on search input, fetching new results if search changes."""
+        if search_text:
+            self.worker = FetchWorker(self.youtube_api_key)
+            self.worker.tracks_fetched.connect(self.on_tracks_fetched)
+            self.worker.error_occurred.connect(self.on_error)
+            self.worker.run = lambda: self.search_youtube(search_text)  # Override run for search
+            self.worker.start()
+        else:
+            self.update_track_list()
+
+    def search_youtube(self, query):
+        """Search YouTube API with custom query."""
+        try:
+            url = "https://www.googleapis.com/youtube/v3/search"
+            params = {
+                "part": "snippet",
+                "q": query,
+                "type": "video",
+                "maxResults": 20,
+                "key": self.youtube_api_key,
+                "videoCategoryId": "10",
+            }
+            response = requests.get(url, params=params)
+            data = response.json()
+            if "items" in data:
+                tracks = [(item["snippet"]["title"], item["id"]["videoId"]) for item in data["items"]]
+                self.tracks_fetched.emit(tracks)
+            else:
+                self.error_occurred.emit("No tracks found for search")
+        except Exception as e:
+            self.error_occurred.emit(f"Failed to search YouTube: {str(e)}")
 
     def update_track_list(self):
         """Refresh the track list with fetched web tracks."""
@@ -209,7 +221,7 @@ class TuneBlasterPlayer:
             self.parent.ui.track_list.addItem(title)
 
     def update_playlist_ui(self):
-        """Refresh the playlist widget with current files."""
+        """Refresh the playlist widget with current local files."""
         self.parent.ui.playlist_widget.clear()
         for file_path in self.playlist:
             self.parent.ui.playlist_widget.addItem(file_path)
