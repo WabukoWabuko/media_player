@@ -5,10 +5,10 @@ from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtWidgets import QFileDialog, QMessageBox
 from PyQt5.QtCore import QUrl
 import logging
-import spotdl
+import yt_dlp
 import os
-import yt_dlp  # For Boomplay URL extraction
 from threading import Thread
+import random
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -19,11 +19,10 @@ class TuneBlasterPlayer:
         self.parent = parent
         self.media_player = QMediaPlayer(parent)
         self.media_player.setVideoOutput(self.parent.ui.video_display)
-        self.playlist = []
-        self.spotify_cache = os.path.expanduser("~/TuneBlaster_Spotify_Cache")
-        self.boomplay_cache = os.path.expanduser("~/TuneBlaster_Boomplay_Cache")
-        os.makedirs(self.spotify_cache, exist_ok=True)
-        os.makedirs(self.boomplay_cache, exist_ok=True)
+        self.playlist = []  # Local files
+        self.web_tracks = []  # Scraped tracks: (title, url)
+        self.cache_dir = os.path.expanduser("~/TuneBlaster_Cache")
+        os.makedirs(self.cache_dir, exist_ok=True)
 
         # Connect signals
         self.media_player.durationChanged.connect(self.update_duration)
@@ -37,13 +36,12 @@ class TuneBlasterPlayer:
             self.parent.ui.play_button.setText("Play")
         else:
             if self.media_player.media().isNull():
-                logging.warning("Nothing to play, mate!")
-                QMessageBox.warning(self.parent, "Oops!", "Load some media first, ya dingus!")
+                self.fetch_music()  # Auto-fetch if nothing’s loaded
             else:
                 self.media_player.play()
                 self.parent.ui.play_button.setText("Pause")
 
-    def load_media(self):
+    def load_local_media(self):
         """Load local files, time to cue up the next banger!"""
         file_paths, _ = QFileDialog.getOpenFileNames(
             self.parent,
@@ -59,77 +57,40 @@ class TuneBlasterPlayer:
             self.parent.ui.play_button.setText("Pause")
             logging.info(f"Loaded local files: {file_paths}")
 
-    def load_stream(self):
-        """Load an online stream from the URL input."""
-        url = self.parent.ui.stream_input.text().strip()
-        if url:
-            if not url.startswith("http://") and not url.startswith("https://"):
-                url = "https://" + url
-            self.playlist.append(url)
-            self.update_playlist_ui()
-            self.media_player.setMedia(QMediaContent(QUrl(url)))
-            self.media_player.play()
-            self.parent.ui.play_button.setText("Pause")
-            self.parent.ui.stream_input.clear()
-            logging.info(f"Loaded stream: {url}")
-        else:
-            QMessageBox.warning(self.parent, "Oops!", "Enter a valid URL, ya dingus!")
-            logging.warning("Empty URL input attempted.")
+    def fetch_music(self):
+        """Fetch music from YouTube and play a random track."""
+        Thread(target=self.scrape_youtube).start()
 
-    def load_spotify(self):
-        """Load a Spotify track or playlist from URL."""
-        spotify_url = self.parent.ui.spotify_input.text().strip()
-        if spotify_url:
-            if "spotify.com" not in spotify_url:
-                QMessageBox.warning(self.parent, "Oops!", "Enter a valid Spotify URL!")
-                logging.warning("Invalid Spotify URL attempted.")
-                return
-            Thread(target=self.download_spotify, args=(spotify_url,)).start()
-            self.parent.ui.spotify_input.clear()
-        else:
-            QMessageBox.warning(self.parent, "Oops!", "Enter a Spotify URL, ya dingus!")
-            logging.warning("Empty Spotify URL input attempted.")
-
-    def download_spotify(self, url):
-        """Download Spotify track/playlist using spotdl and add to playlist."""
+    def scrape_youtube(self):
+        """Scrape YouTube for music tracks."""
         try:
-            from spotdl import Spotdl
-            spotdl_client = Spotdl(client_id="YOUR_SPOTIFY_CLIENT_ID", client_secret="YOUR_SPOTIFY_CLIENT_SECRET")
-            tracks = spotdl_client.search([url])
-            downloaded_files = spotdl_client.download_songs(tracks, output_dir=self.spotify_cache)
-            for file_path, _ in downloaded_files:
-                if file_path:
-                    self.playlist.append(file_path)
-                    self.update_playlist_ui()
-                    logging.info(f"Downloaded Spotify track: {file_path}")
-            if downloaded_files:
-                self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(downloaded_files[0][0])))
-                self.media_player.play()
-                self.parent.ui.play_button.setText("Pause")
+            # Simple search for "music" (could expand with genres later)
+            search_query = "music -inurl:(signup login)"
+            ydl_opts = {
+                "format": "bestaudio/best",
+                "quiet": True,
+                "extract_flat": True,  # Get metadata without downloading yet
+                "default_search": "ytsearch20",  # Fetch 20 results
+            }
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                result = ydl.extract_info(search_query, download=False)
+                self.web_tracks = [(entry["title"], entry["url"]) for entry in result["entries"]]
+                self.update_track_list()
+                # Play a random track
+                if self.web_tracks:
+                    title, url = random.choice(self.web_tracks)
+                    self.download_and_play(title, url)
+                    logging.info(f"Fetched {len(self.web_tracks)} tracks from YouTube")
         except Exception as e:
-            QMessageBox.critical(self.parent, "Spotify Error", f"Failed to load Spotify: {str(e)}")
-            logging.error(f"Spotify download failed: {str(e)}")
+            QMessageBox.critical(self.parent, "Fetch Error", f"Failed to fetch music: {str(e)}")
+            logging.error(f"YouTube scrape failed: {str(e)}")
 
-    def load_boomplay(self):
-        """Load a Boomplay track or playlist from URL."""
-        boomplay_url = self.parent.ui.boomplay_input.text().strip()
-        if boomplay_url:
-            if "boomplay.com" not in boomplay_url:
-                QMessageBox.warning(self.parent, "Oops!", "Enter a valid Boomplay URL!")
-                logging.warning("Invalid Boomplay URL attempted.")
-                return
-            Thread(target=self.download_boomplay, args=(boomplay_url,)).start()
-            self.parent.ui.boomplay_input.clear()
-        else:
-            QMessageBox.warning(self.parent, "Oops!", "Enter a Boomplay URL, ya dingus!")
-            logging.warning("Empty Boomplay URL input attempted.")
-
-    def download_boomplay(self, url):
-        """Download Boomplay track using yt-dlp and add to playlist."""
+    def download_and_play(self, title, url):
+        """Download a track and play it."""
         try:
             ydl_opts = {
                 "format": "bestaudio/best",
-                "outtmpl": os.path.join(self.boomplay_cache, "%(title)s.%(ext)s"),
+                "outtmpl": os.path.join(self.cache_dir, f"{title}.%(ext)s"),
                 "quiet": True,
             }
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -140,27 +101,35 @@ class TuneBlasterPlayer:
                 self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(file_path)))
                 self.media_player.play()
                 self.parent.ui.play_button.setText("Pause")
-                logging.info(f"Downloaded Boomplay track: {file_path}")
+                logging.info(f"Playing downloaded track: {file_path}")
         except Exception as e:
-            QMessageBox.critical(self.parent, "Boomplay Error", f"Failed to load Boomplay: {str(e)}")
-            logging.error(f"Boomplay download failed: {str(e)}")
+            QMessageBox.critical(self.parent, "Download Error", f"Failed to download: {str(e)}")
+            logging.error(f"Download failed: {str(e)}")
 
-    def play_from_playlist(self, item):
-        """Play a file or stream from the playlist when double-clicked."""
-        media_source = item.text()
-        if media_source.startswith("http://") or media_source.startswith("https://"):
-            self.media_player.setMedia(QMediaContent(QUrl(media_source)))
-        else:
-            self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(media_source)))
-        self.media_player.play()
-        self.parent.ui.play_button.setText("Pause")
-        logging.info(f"Playing from playlist: {media_source}")
+    def play_from_list(self, item):
+        """Play a track from the web track list when double-clicked."""
+        index = self.parent.ui.track_list.row(item)
+        title, url = self.web_tracks[index]
+        self.download_and_play(title, url)
+
+    def filter_tracks(self, search_text):
+        """Filter the track list based on search input."""
+        self.parent.ui.track_list.clear()
+        for title, url in self.web_tracks:
+            if search_text.lower() in title.lower():
+                self.parent.ui.track_list.addItem(title)
+
+    def update_track_list(self):
+        """Refresh the track list with fetched web tracks."""
+        self.parent.ui.track_list.clear()
+        for title, _ in self.web_tracks:
+            self.parent.ui.track_list.addItem(title)
 
     def update_playlist_ui(self):
-        """Refresh the playlist widget with current files and URLs."""
+        """Refresh the playlist widget with current files."""
         self.parent.ui.playlist_widget.clear()
-        for media_source in self.playlist:
-            self.parent.ui.playlist_widget.addItem(media_source)
+        for file_path in self.playlist:
+            self.parent.ui.playlist_widget.addItem(file_path)
 
     def seek(self, position):
         """Jump to a specific time in the media."""

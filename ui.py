@@ -19,32 +19,18 @@ class TuneBlasterUI:
         self.video_display = QVideoWidget()
         main_layout.addWidget(self.video_display)
 
-        # Stream input
-        stream_layout = QHBoxLayout()
-        self.stream_input = QLineEdit()
-        self.stream_input.setPlaceholderText("Enter stream URL (e.g., http://example.com/stream.mp3)")
-        stream_layout.addWidget(self.stream_input)
-        self.stream_button = QPushButton("Load Stream")
-        stream_layout.addWidget(self.stream_button)
-        main_layout.addLayout(stream_layout)
+        # Search and fetch layout
+        search_layout = QHBoxLayout()
+        self.search_input = QLineEdit()
+        self.search_input.setPlaceholderText("Search tracks...")
+        search_layout.addWidget(self.search_input)
+        self.fetch_button = QPushButton("Play Music")
+        search_layout.addWidget(self.fetch_button)
+        main_layout.addLayout(search_layout)
 
-        # Spotify input
-        spotify_layout = QHBoxLayout()
-        self.spotify_input = QLineEdit()
-        self.spotify_input.setPlaceholderText("Enter Spotify URL (e.g., https://open.spotify.com/track/...)")
-        spotify_layout.addWidget(self.spotify_input)
-        self.spotify_button = QPushButton("Load Spotify")
-        spotify_layout.addWidget(self.spotify_button)
-        main_layout.addLayout(spotify_layout)
-
-        # Boomplay input
-        boomplay_layout = QHBoxLayout()
-        self.boomplay_input = QLineEdit()
-        self.boomplay_input.setPlaceholderText("Enter Boomplay URL (e.g., https://www.boomplay.com/songs/...)")
-        boomplay_layout.addWidget(self.boomplay_input)
-        self.boomplay_button = QPushButton("Load Boomplay")
-        boomplay_layout.addWidget(self.boomplay_button)
-        main_layout.addLayout(boomplay_layout)
+        # Track list
+        self.track_list = QListWidget()
+        main_layout.addWidget(self.track_list)
 
         # Controls
         controls_layout = QHBoxLayout()
@@ -59,9 +45,10 @@ class TuneBlasterUI:
         self.volume_slider.setMaximum(100)
         self.volume_slider.setValue(50)
         controls_layout.addWidget(self.volume_slider)
-        self.open_button = QPushButton("Open Files")
+        self.open_button = QPushButton("Open Local Files")
         controls_layout.addWidget(self.open_button)
         main_layout.addLayout(controls_layout)
 
+        # Playlist widget (downloaded files)
         self.playlist_widget = QListWidget()
         main_layout.addWidget(self.playlist_widget)
