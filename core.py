@@ -1,24 +1,24 @@
 # core.py
-"""Core module: The heart of our epic media player."""
-from PyQt5.QtWidgets import QMainWindow, QApplication
-import sys
-from ui import PlayerUI
-from player import MediaPlayerBackend
+"""Core module: The beating heart of TuneBlaster 3000."""
 
-class MediaPlayerApp(QMainWindow):
-    """Main app window, the grand maestro of our media symphony."""
+from PyQt5.QtWidgets import QMainWindow
+from ui import TuneBlasterUI
+from player import TuneBlasterPlayer
+
+class TuneBlasterApp(QMainWindow):
+    """Main window class: The conductor of our musical orchestra."""
     def __init__(self):
         super().__init__()
         self.setWindowTitle("TuneBlaster 3000")
         self.setGeometry(100, 100, 600, 400)
-        self.backend = MediaPlayerBackend(self)
-        self.ui = PlayerUI(self)
-        self.ui.setup_ui()
-        self.ui.play_btn.clicked.connect(self.backend.toggle_play)
-        self.ui.open_btn.clicked.connect(self.backend.open_media)
 
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    window = MediaPlayerApp()
-    window.show()
-    sys.exit(app.exec_())
+        # Setup UI first
+        self.ui = TuneBlasterUI(self)
+        self.ui.setup_ui()
+
+        # Then setup player
+        self.player = TuneBlasterPlayer(self)
+
+        # Connect UI signals to player slots
+        self.ui.play_button.clicked.connect(self.player.toggle_playback)
+        self.ui.open_button.clicked.connect(self.player.load_media)

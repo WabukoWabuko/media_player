@@ -1,32 +1,36 @@
 # player.py
-"""Player module: Where the magic of sound and video happens."""
+"""Player module: Where the tunes and flicks come to life."""
+
 from PyQt5.QtMultimedia import QMediaPlayer, QMediaContent
 from PyQt5.QtWidgets import QFileDialog
 from PyQt5.QtCore import QUrl
 
-class MediaPlayerBackend:
-    """Backend for playing media, the DJ behind the scenes."""
+class TuneBlasterPlayer:
+    """Playback engine: The DJ spinning the tracks."""
     def __init__(self, parent):
         self.parent = parent
-        self.player = QMediaPlayer(parent)
-        self.player.setVideoOutput(parent.ui.video_widget)
+        self.media_player = QMediaPlayer(parent)
+        self.media_player.setVideoOutput(self.parent.ui.video_display)
 
-    def toggle_play(self):
-        """Play or pause, like flipping a musical light switch."""
-        if self.player.state() == QMediaPlayer.PlayingState:
-            self.player.pause()
-            self.parent.ui.play_btn.setText("Play")
+    def toggle_playback(self):
+        """Play or pause the media, like a musical yo-yo."""
+        if self.media_player.state() == QMediaPlayer.PlayingState:
+            self.media_player.pause()
+            self.parent.ui.play_button.setText("Play")
         else:
-            self.player.play()
-            self.parent.ui.play_btn.setText("Pause")
+            self.media_player.play()
+            self.parent.ui.play_button.setText("Pause")
 
-    def open_media(self):
-        """Open a local file, time to drop the beat!"""
-        file, _ = QFileDialog.getOpenFileName(
-            self.parent, "Pick a Tune or Flick", "",
-            "Media Files (*.mp3 *.wav *.mp4 *.avi);;All Files (*)"
+    def load_media(self):
+        """Load a file, time to cue up the next banger!"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self.parent,
+            "Select a Media File",
+            "",
+            "Media Files (*.mp3 *.wav *.mp4 *.avi *.mkv);;All Files (*)"
         )
-        if file:
-            self.player.setMedia(QMediaContent(QUrl.fromLocalFile(file)))
-            self.player.play()
-            self.parent.ui.play_btn.setText("Pause")
+        if file_path:
+            media_content = QMediaContent(QUrl.fromLocalFile(file_path))
+            self.media_player.setMedia(media_content)
+            self.media_player.play()
+            self.parent.ui.play_button.setText("Pause")

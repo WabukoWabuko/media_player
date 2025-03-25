@@ -1,20 +1,29 @@
 # ui.py
-"""UI module: Making this player look snazzy and functional."""
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QVideoWidget
+"""UI module: Dressing up TuneBlaster 3000 in style."""
 
-class PlayerUI:
-    """UI class: The face of our media player, ready to dazzle."""
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton
+from PyQt5.QtMultimediaWidgets import QVideoWidget  # Fixed import!
+
+class TuneBlasterUI:
+    """UI handler: Making our player look good and play nice."""
     def __init__(self, parent):
         self.parent = parent
 
     def setup_ui(self):
-        """Set up the UI, laying out the red carpet for our controls."""
-        central_widget = QWidget(self.parent)
-        self.parent.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
-        self.video_widget = QVideoWidget()
-        layout.add_widget(self.video_widget)
-        self.play_btn = QPushButton("Play")
-        layout.add_widget(self.play_btn)
-        self.open_btn = QPushButton("Open File")
-        layout.add_widget(self.open_btn)
+        """Build the interface, rolling out the red carpet for controls."""
+        # Central widget and layout
+        main_widget = QWidget(self.parent)
+        self.parent.setCentralWidget(main_widget)
+        layout = QVBoxLayout(main_widget)
+
+        # Video display area
+        self.video_display = QVideoWidget()
+        layout.addWidget(self.video_display)
+
+        # Play/Pause button
+        self.play_button = QPushButton("Play")
+        layout.addWidget(self.play_button)
+
+        # Open file button
+        self.open_button = QPushButton("Open File")
+        layout.addWidget(self.open_button)
