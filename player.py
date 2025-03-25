@@ -10,7 +10,7 @@ import os
 import random
 import numpy as np
 import json
-import requests  # For YouTube API calls
+import requests
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -20,9 +20,10 @@ class FetchWorker(QThread):
     tracks_fetched = pyqtSignal(list)  # Signal for fetched tracks: [(title, video_id), ...]
     error_occurred = pyqtSignal(str)   # Signal for errors
 
-    def __init__(self, api_key):
+    def __init__(self, api_key, query="music -inurl:(signup login)"):
         super().__init__()
         self.api_key = api_key
+        self.query = query
 
     def run(self):
         """Fetch music videos from YouTube API."""
@@ -30,7 +31,7 @@ class FetchWorker(QThread):
             url = "https://www.googleapis.com/youtube/v3/search"
             params = {
                 "part": "snippet",
-                "q": "music -inurl:(signup login)",  # Default query
+                "q": self.query,
                 "type": "video",
                 "maxResults": 20,
                 "key": self.api_key,
@@ -76,7 +77,7 @@ class TuneBlasterPlayer:
         self.media_player = QMediaPlayer(parent)
         self.media_player.setVideoOutput(self.parent.ui.video_display)
         self.playlist = []
-        self.web_tracks = []  # Now stores (title, video_id)
+        self.web_tracks = []  # Stores (title, video_id)
         self.cache_dir = os.path.expanduser("~/TuneBlaster_Cache")
         self.config_dir = os.path.expanduser("~/TuneBlaster_Config")
         os.makedirs(self.cache_dir, exist_ok=True)
@@ -153,7 +154,6 @@ class TuneBlasterPlayer:
         """Handle fetched tracks from worker thread."""
         self.web_tracks = tracks
         self.update_track_list()
-        # Play a random track
         if tracks:
             title, video_id = random.choice(tracks)
             self.play_youtube_track(video_id)
@@ -176,43 +176,19 @@ class TuneBlasterPlayer:
         self.media_player.setMedia(QMediaContent(QUrl(url)))
         self.media_player.play()
         self.parent.ui.play_button.setText("Pause")
-        # Fake audio data for visualizer (real data needs audio analysis)
         fake_audio = np.random.randint(0, 255, 50).tolist()
         self.parent.ui.visualizer.set_audio_data(fake_audio)
         logging.info(f"Playing YouTube track: {video_id}")
 
     def filter_tracks(self, search_text):
-        """Filter the track list based on search input, fetching new results if search changes."""
+        """Filter tracks by fetching new YouTube results based on search input."""
         if search_text:
-            self.worker = FetchWorker(self.youtube_api_key)
+            self.worker = FetchWorker(self.youtube_api_key, query=search_text)
             self.worker.tracks_fetched.connect(self.on_tracks_fetched)
             self.worker.error_occurred.connect(self.on_error)
-            self.worker.run = lambda: self.search_youtube(search_text)  # Override run for search
             self.worker.start()
         else:
-            self.update_track_list()
-
-    def search_youtube(self, query):
-        """Search YouTube API with custom query."""
-        try:
-            url = "https://www.googleapis.com/youtube/v3/search"
-            params = {
-                "part": "snippet",
-                "q": query,
-                "type": "video",
-                "maxResults": 20,
-                "key": self.youtube_api_key,
-                "videoCategoryId": "10",
-            }
-            response = requests.get(url, params=params)
-            data = response.json()
-            if "items" in data:
-                tracks = [(item["snippet"]["title"], item["id"]["videoId"]) for item in data["items"]]
-                self.tracks_fetched.emit(tracks)
-            else:
-                self.error_occurred.emit("No tracks found for search")
-        except Exception as e:
-            self.error_occurred.emit(f"Failed to search YouTube: {str(e)}")
+            self.fetch_music()  # Default fetch if search is cleared
 
     def update_track_list(self):
         """Refresh the track list with fetched web tracks."""
