@@ -3,7 +3,7 @@
 
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QPushButton, QSlider, QListWidget, QHBoxLayout, QLineEdit, QListWidgetItem
 from PyQt5.QtMultimediaWidgets import QVideoWidget
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QSize  # Added QSize import
 from player import VisualizerWidget
 
 class TuneBlasterUI:

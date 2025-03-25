@@ -275,7 +275,7 @@ class TuneBlasterPlayer:
         self.parent.ui.track_list.clear()
         for title, _, thumbnail, duration in self.web_tracks:
             item_text = f"{title} [{duration}]"
-            item = self.parent.ui.track_list.add_item(item_text)
+            item = self.parent.ui.add_item(item_text)  # Fixed: Call add_item on TuneBlasterUI instance
             # Download and set thumbnail
             try:
                 response = requests.get(thumbnail)
